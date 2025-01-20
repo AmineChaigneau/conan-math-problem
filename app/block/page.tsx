@@ -124,6 +124,7 @@ export default function Block() {
               </div>
             </div>
             <TrialManager
+              remaining={NUM_CORRECT_ANSWERS - correctAnswers}
               problem={getCurrentProblem()}
               difficulty={currentDifficulty}
               onTrialComplete={handleTrialComplete}

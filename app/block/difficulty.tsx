@@ -10,10 +10,15 @@ const firaCode = Fira_Code({
 
 export type DifficultyProps = {
   isCorrect: boolean;
+  remaining: number;
   onChoice: (giveUp: boolean) => void;
 };
 
-export const DifficultyChoice = ({ isCorrect, onChoice }: DifficultyProps) => {
+export const DifficultyChoice = ({
+  isCorrect,
+  remaining,
+  onChoice,
+}: DifficultyProps) => {
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,7 +54,7 @@ export const DifficultyChoice = ({ isCorrect, onChoice }: DifficultyProps) => {
       const rect = containerRef.current.getBoundingClientRect();
       setCursorPosition({
         x: rect.left + rect.width / 2,
-        y: rect.bottom - 20,
+        y: rect.top + rect.height / 2,
       });
     }
   };
@@ -82,9 +87,9 @@ export const DifficultyChoice = ({ isCorrect, onChoice }: DifficultyProps) => {
     return () => window.removeEventListener("mouseup", handleGlobalMouseUp);
   }, [isDragging]);
 
-  if (isCorrect) {
-    return null;
-  }
+  // if (isCorrect) {
+  //   return null;
+  // }
 
   return (
     <div
@@ -127,12 +132,17 @@ export const DifficultyChoice = ({ isCorrect, onChoice }: DifficultyProps) => {
         >
           {isDragging ? "Make Easier" : ""}
         </Button>
-        <h2
-          className={`absolute top-1/2 mt-[50px] left-1/2 -translate-x-1/2 -translate-y-1/2 text-center ${firaCode.className} text-lg`}
+        <div
+          className={`absolute flex flex-col items-center justify-center gap-4 top-1/2 mt-[100px] left-1/2 -translate-x-1/2 -translate-y-1/2 text-center ${firaCode.className}`}
         >
-          Would you like to try another difficult problem <br /> or switch to
-          easier ones?
-        </h2>
+          <h1 className="text-6xl font-bold">
+            {isCorrect ? remaining - 1 : remaining} remaing
+          </h1>
+          <h2 className="text-lg">
+            Would you like to try another difficult problem <br /> or switch to
+            easier ones?
+          </h2>
+        </div>
       </div>
     </div>
   );

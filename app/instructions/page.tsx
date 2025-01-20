@@ -31,14 +31,6 @@ export default function Instructions() {
       ),
     },
     {
-      title: "Your Goal",
-      content: (
-        <div className="flex flex-col gap-8 text-justify">
-          <img src="/images/yourgoal.png" alt="Yourgoal" />
-        </div>
-      ),
-    },
-    {
       title: "Number Sequences",
       content: (
         <div className="flex flex-col gap-8 text-justify">
@@ -67,6 +59,14 @@ export default function Instructions() {
       content: (
         <div className="flex flex-col gap-8 text-justify">
           <img src="/images/singlechoice.png" alt="Singlechoice" />
+        </div>
+      ),
+    },
+    {
+      title: "Your Goal",
+      content: (
+        <div className="flex flex-col gap-8 text-justify">
+          <img src="/images/yourgoal.png" alt="Yourgoal" />
         </div>
       ),
     },

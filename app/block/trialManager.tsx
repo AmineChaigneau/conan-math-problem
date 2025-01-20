@@ -5,13 +5,14 @@ import { MathProblem } from "./math";
 import { Problem } from "./page";
 
 export type TrialManagerProps = {
+  remaining: number;
   problem: Problem;
   difficulty: "easy" | "medium" | "hard";
   onTrialComplete: (correct: boolean, easier: boolean) => void;
 };
 
 export const TrialManager = (props: TrialManagerProps) => {
-  const { problem, difficulty, onTrialComplete } = props;
+  const { remaining, problem, difficulty, onTrialComplete } = props;
   const [showFeedback, setShowFeedback] = useState<"success" | "error" | null>(
     null
   );
@@ -64,7 +65,8 @@ export const TrialManager = (props: TrialManagerProps) => {
 
   if (isAnswered) {
     // For easy difficulty, skip difficulty choice and complete immediately
-    if (difficulty === "easy" || isCorrect) {
+    // if (difficulty === "easy" || isCorrect) {
+    if (difficulty === "easy") {
       setTimeout(() => {
         handleDifficultyChoice(false);
       }, 500);
@@ -75,6 +77,7 @@ export const TrialManager = (props: TrialManagerProps) => {
     return (
       <DifficultyChoice
         isCorrect={isCorrect}
+        remaining={remaining}
         onChoice={handleDifficultyChoice}
       />
     );

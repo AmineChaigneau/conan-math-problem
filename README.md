@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Persistence and Decision-Making
 
-## Getting Started
+A cognitive training application that studies how decision-making and persistence evolve over time as mathematical sequence problems become increasingly difficult.
 
-First, run the development server:
+## Try It Out
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Try the task: [Live Demo](https://conan-mathproblem.web.app/)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How It Works
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Users are presented with a sequence of numbers and mathematical operators
+2. Each element appears briefly in sequence
+3. Users must solve the mathematical sequence and select the correct answer
+4. Answers are selected by dragging a cursor to one of four options
+5. Feedback is provided after each attempt
+6. Users can choose to continue at current difficulty or switch to easier problems
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Technical Details
 
-## Learn More
+Built with:
 
-To learn more about Next.js, take a look at the following resources:
+- Next.js 13+ (React Framework)
+- TypeScript
+- Tailwind CSS
+- Lucide Icons
+- Custom UI Components
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Key Components
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `TrialManager`: Handles individual problem attempts and feedback
+- `MathProblem`: Displays sequences and answer options
+- `DifficultyChoice`: Manages difficulty selection interface
+- `Cursor`: Custom draggable cursor component
 
-## Deploy on Vercel
+## Game Flow
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Users start with medium/hard difficulty problems
+2. Users can opt for easier problems after answers
+3. Progress bar shows advancement toward completion goal
+4. Session ends after reaching maximum attempts or completion goal
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Installation & Setup
+
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Run development server: `npm run dev`
+4. Access app at `localhost:3000`
+
+## Usage
+
+1. Read instructions
+2. Complete training mode
+3. Solve mathematical sequences
+4. Track progress toward completion
+5. Review results at end of session

@@ -74,9 +74,7 @@ const FullScreen: React.FC<{
   }, [setIsFullscreen]);
 
   useEffect(() => {
-    if (!isFullscreen) {
-      console.log(`browser detect fullscreenMode: ${isFullscreen}`);
-    }
+    console.log(`browser detect fullscreenMode: ${isFullscreen}`);
   }, [isFullscreen]);
 
   if (!setIsFullscreen) {

@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "deploy": "next build && firebase deploy --only hosting",
+    "serve": "firebase emulators:start"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

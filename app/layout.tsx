@@ -1,4 +1,3 @@
-import FullScreen from "@/components/ui/fullscreen";
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
@@ -29,7 +28,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased h-screen w-full user-select-none`}
       >
-        <FullScreen isActive={true}>{children}</FullScreen>
+        {/* <FullScreen isActive={true}> */}
+        {children}
+        {/* </FullScreen> */}
       </body>
     </html>
   );

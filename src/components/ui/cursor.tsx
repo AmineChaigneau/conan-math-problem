@@ -15,8 +15,6 @@ const Cursor = ({
 }: CursorProps) => {
   const cursorRef = useRef<HTMLDivElement>(null);
 
-  console.log(position);
-
   return (
     <div
       ref={cursorRef}
