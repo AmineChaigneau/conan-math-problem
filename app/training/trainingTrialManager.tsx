@@ -37,6 +37,15 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     }, 1000);
   };
 
+  const handleReset = () => {
+    setShowFeedback(null);
+  };
+
+  // Dummy function for onDataCollection
+  const handleDataCollection = () => {
+    // Do nothing in training mode
+  };
+
   if (showFeedback) {
     return (
       <>
@@ -54,11 +63,14 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
 
   return (
     <MathProblem
-      difficulty="easy"
+      trialId={999}
+      difficulty="medium"
       sequence={problem.sequence}
       answers={problem.answers}
       correctAnswer={problem.correctAnswer}
       onComplete={handleComplete}
+      onReset={handleReset}
+      onDataCollection={handleDataCollection}
     />
   );
 };

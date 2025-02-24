@@ -1,17 +1,17 @@
 export const CONSENT_TEXT = (
   <div className="flex flex-col gap-2 text-justify">
     <p>
-      The purpose of this experiment is to study how decision-making and
-      persistence evolve over time under increasing task difficulty.
+      The purpose of this experiment is to study decision-making and persistence
+      in cognitively demanding tasks.
     </p>
 
     <p>
       You will participate in a behavioral experiment that will contribute to
       our understanding of how people make trade-offs between effort and reward
-      under challenging conditions. You will be asked to guide a bird through
-      obstacles to collect various rewards, choosing between continuing at the
-      current difficulty or opting for easier settings as the task becomes
-      progressively more demanding.
+      under challenging conditions. You will be presented with a series of math
+      problems that vary in complexity. You will be asked to solve the problems
+      as quickly and accurately as possible. You can choose to continue with
+      difficult problems or stop for easier ones.
     </p>
 
     <p>

@@ -31,7 +31,7 @@ export default function Training() {
 
   useEffect(() => {
     try {
-      const maths = generateMathProblems(NUM_TRIALS_TRAINING);
+      const maths = generateMathProblems(100);
       setProblems(maths.easy);
       setIsLoaded(true);
     } catch (error) {
@@ -59,7 +59,8 @@ export default function Training() {
     return problems[currentProblemIndex];
   };
 
-  const isTrainingComplete = currentProblemIndex >= NUM_TRIALS_TRAINING;
+  const isTrainingComplete =
+    correctAnswers >= NUM_TRIALS_TRAINING || attempts >= problems.length;
 
   if (isTrainingComplete) {
     return (
@@ -71,8 +72,8 @@ export default function Training() {
             Training Complete!
           </h1>
           <h2 className="text-2xl text-center">
-            You got <b>{correctAnswers}</b> out of {NUM_TRIALS_TRAINING}{" "}
-            correct.
+            You got <b>{correctAnswers}</b> correct answers in {attempts}{" "}
+            attempts.
           </h2>
           <p className="text-center">
             Click below to start the main experiment.
@@ -103,7 +104,7 @@ export default function Training() {
         <div
           className={`flex items-center justify-center px-4 py-2 bg-orange-500 rounded-lg shadow-lg ${firaCode.className}`}
         >
-          {attempts} / {NUM_TRIALS_TRAINING}
+          {attempts}
         </div>
       </div>
       {!isLoaded && (
@@ -114,14 +115,14 @@ export default function Training() {
       <div className="flex flex-col items-center justify-center h-full w-full">
         <div className="h-[75px] w-3/4 flex flex-col items-center justify-center gap-2">
           <Progress
-            value={(correctAnswers / 10) * 100}
+            value={(correctAnswers / NUM_TRIALS_TRAINING) * 100}
             className="shadow-2xl"
           />
           <div
             className={`text-sm text-zinc-400 ${firaCode.className} text-center`}
           >
-            {correctAnswers} / 40{" "}
-            <i className="text-xs">(Correct answers target)</i>
+            {correctAnswers} / {NUM_TRIALS_TRAINING}{" "}
+            <i className="text-xs">(Correct answers needed)</i>
           </div>
         </div>
         <TrainingTrialManager

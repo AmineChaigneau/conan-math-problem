@@ -10,10 +10,12 @@ import {
   FormLabel,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { db } from "@/config/firebase";
+import { auth, db, storage } from "@/config/firebase";
 import { CONSENT_TEXT } from "@/constants/consent";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { signInAnonymously } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
+import { ref, uploadString } from "firebase/storage";
 import { AlertCircle } from "lucide-react";
 import { Fira_Code } from "next/font/google";
 import { useRouter } from "next/navigation";
@@ -319,6 +321,7 @@ export default function ConsentAndDemographicsForm() {
   const [step, setStep] = useState<"consent" | "demographics">("consent");
   const [error, setError] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
   const form = useForm<FormData>({
@@ -339,15 +342,18 @@ export default function ConsentAndDemographicsForm() {
     } else {
       form.handleSubmit(async (data) => {
         try {
-          // Get browser and screen information
+          setIsLoading(true);
+          const userCredential = await signInAnonymously(auth);
+          const user = userCredential.user;
+
           const parser = new UAParser();
           const browserInfo = parser.getResult();
 
-          // Create user data object
           const userData = {
             ...data,
+            participantId: user.uid, // Store Firebase UID
             status: "started",
-            timestamp: new Date().toISOString(),
+            startTime: new Date().toISOString(),
             screenSize: {
               width: window.innerWidth,
               height: window.innerHeight,
@@ -360,23 +366,25 @@ export default function ConsentAndDemographicsForm() {
           };
 
           // Save to Firestore
-          const userDocRef = doc(db, "users", data.prolific);
+          const userDocRef = doc(db, "users", user.uid);
           await setDoc(userDocRef, userData);
 
-          // Save to Storage as JSON file
-          // const storageRef = ref(storage, `forms/${data.prolific}.json`);
-          // await uploadString(
-          //   storageRef,
-          //   JSON.stringify(userData, null, 2),
-          //   "raw"
-          // );
+          // Save to Storage
+          const storagePath = `participants/${user.uid}`;
+          const storageRef = ref(storage, `${storagePath}/utils_data.json`);
+          await uploadString(
+            storageRef,
+            JSON.stringify(userData, null, 2),
+            "raw"
+          );
 
           setSuccess(true);
           router.push("/instructions");
-          // handle save and error
         } catch (error) {
           console.error("Error saving data:", error);
           setError(true);
+        } finally {
+          setIsLoading(false);
         }
       })();
     }
@@ -477,10 +485,15 @@ export default function ConsentAndDemographicsForm() {
           )}
         </div>
       </div>
+      {isLoading && (
+        <div className="fixed top-0 left-0 h-full w-full bg-black bg-opacity-80 flex items-center justify-center">
+          <img src="/images/loading.svg" alt="Loading..." className="h-8" />
+        </div>
+      )}
       <Button
         onClick={handleButtonClick}
         disabled={step === "demographics" && !form.formState.isValid}
-        className={`w-full max-w-2xl  ${firaCode.className} text-lg`}
+        className={`w-full max-w-2xl ${firaCode.className} text-lg`}
       >
         {step === "consent" ? "I approve" : "Submit"}
       </Button>

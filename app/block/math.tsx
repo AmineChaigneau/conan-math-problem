@@ -1,9 +1,15 @@
+import { TimeAlert } from "@/components/timeAlert";
 import { Button } from "@/components/ui/button";
 import Cursor from "@/components/ui/cursor";
+import { STARTING_DEADLINE_DURATION } from "@/constants/block";
 import { TIMING } from "@/constants/mathProblemGenerator";
+import { useDeadline } from "@/hooks/deadline";
+import { useMouseTracking } from "@/hooks/useMouseTracking";
+import { MathTrialData } from "@/types/analytics";
 import { Plus } from "lucide-react";
 import { Fira_Code } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
+import { Sequence } from "./sequence";
 
 const firaCode = Fira_Code({
   subsets: ["latin"],
@@ -11,70 +17,104 @@ const firaCode = Fira_Code({
 });
 
 export type MathProblemProps = {
+  trialId: number;
   difficulty: string;
   sequence: string;
   answers: number[];
   correctAnswer: number;
   onComplete: (correct: boolean) => void;
+  onReset: () => void;
+  onDataCollection: (data: MathTrialData) => void;
 };
 
 export const MathProblem = (props: MathProblemProps) => {
-  const { difficulty, sequence, answers, correctAnswer, onComplete } = props;
+  const {
+    trialId,
+    difficulty,
+    sequence,
+    answers,
+    correctAnswer,
+    onComplete,
+    onReset,
+    onDataCollection,
+  } = props;
 
   const [displayState, setDisplayState] = useState<
-    "fixation" | "sequence" | "question" | null
+    "fixation" | "question" | null
   >(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isStarted, setIsStarted] = useState(false);
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const cursorPositionsRef = useRef<
-    { x: number; y: number; timestamp: number }[]
-  >([]);
+  const [timeAlertOpen, setTimeAlertOpen] = useState(false);
+  const isStartedRef = useRef(false);
+
+  const trialStartTime = useRef(Date.now());
+  const dragStartTime = useRef<number | null>(null);
+  const { positions, resetPositions } = useMouseTracking(isDragging);
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const [sequenceStarted, setSequenceStarted] = useState(false);
 
-  // Convert sequence string to array of elements
-  const sequenceElements = sequence.split(" ");
+  // Initialize single deadline
+  const firstDragDeadline = useDeadline({
+    duration: STARTING_DEADLINE_DURATION,
+    onExpired: () => {
+      if (!isStartedRef.current && !isDragging) {
+        resetCursorPosition();
+        setIsDragging(false);
+        setTimeAlertOpen(true);
+        onReset();
+      }
+    },
+    startImmediately: true,
+  });
 
-  // Add useEffect to set initial cursor position when container is mounted
   useEffect(() => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       setCursorPosition({
         x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
+        y: rect.bottom - 50,
       });
     }
-  }, [displayState]); // Reset when display state changes
+  }, [displayState]);
+
+  const handleCursorDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    setSequenceStarted(true);
+    setTimeAlertOpen(false);
+    firstDragDeadline.stop();
+    isStartedRef.current = true;
+    dragStartTime.current = Date.now();
+  };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isDragging && containerRef.current) {
       e.preventDefault();
       const rect = containerRef.current.getBoundingClientRect();
-      // Constrain cursor within container bounds
       const x = Math.min(Math.max(e.clientX, rect.left), rect.right);
       const y = Math.min(Math.max(e.clientY, rect.top), rect.bottom);
-      setCursorPosition({ x, y });
+      requestAnimationFrame(() => {
+        setCursorPosition({ x, y });
+      });
     }
   };
 
-  const handleCursorDragStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-    cursorPositionsRef.current = [
-      {
-        x: e.clientX,
-        y: e.clientY,
-        timestamp: Date.now(),
-      },
-    ];
-  };
-
   const resetCursorPosition = () => {
+    firstDragDeadline.start();
+    isStartedRef.current = false;
+    resetPositions();
+
+    setTimeout(() => {
+      setTimeAlertOpen(false);
+    }, TIMING.fixationTime);
+
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       setCursorPosition({
         x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
+        y: rect.bottom - 50,
       });
     }
   };
@@ -83,13 +123,38 @@ export const MathProblem = (props: MathProblemProps) => {
     if (!isDragging) return;
 
     setIsDragging(false);
+    setSequenceStarted(false);
     const element = document.elementFromPoint(e.clientX, e.clientY);
     const answerButton = element?.closest("button");
 
     if (answerButton) {
       const selectedAnswer = parseInt(answerButton.textContent || "0");
       const isCorrect = selectedAnswer === correctAnswer;
+
+      // Collect trial data
+      const trialData: MathTrialData = {
+        timeStamp: new Date().toISOString(),
+        trialId: trialId,
+        sequence,
+        answers,
+        correctAnswer,
+        selectedAnswer,
+        isCorrect,
+        difficulty,
+        mouseTrajectory: positions,
+        initiationTime: dragStartTime.current
+          ? dragStartTime.current - trialStartTime.current
+          : 0,
+        totalTime: Date.now() - trialStartTime.current,
+        trialStartTime: trialStartTime.current,
+      };
+
+      onDataCollection(trialData);
       onComplete(isCorrect);
+      setIsStarted(false);
+    } else {
+      onReset();
+      setDisplayState("fixation");
     }
 
     resetCursorPosition();
@@ -108,42 +173,16 @@ export const MathProblem = (props: MathProblemProps) => {
   }, [isDragging]);
 
   useEffect(() => {
-    // Start with fixation cross
-    setDisplayState("fixation");
-
-    // Focus the center button which moves cursor to center
-    const centerButton = document.getElementById("center-focus-button");
-    if (centerButton) {
-      centerButton.focus();
+    if (!isStarted) {
+      setDisplayState("fixation");
+      setIsStarted(true);
     }
-
-    // After fixation time, start sequence
     const fixationTimer = setTimeout(() => {
-      setDisplayState("sequence");
-      setCurrentIndex(0);
+      setDisplayState("question");
     }, TIMING.fixationTime);
 
     return () => clearTimeout(fixationTimer);
-  }, [sequence]); // Reset when sequence changes
-
-  useEffect(() => {
-    if (displayState !== "sequence") return;
-
-    const timer = setTimeout(
-      () => {
-        if (currentIndex < sequenceElements.length - 1) {
-          setCurrentIndex(currentIndex + 1);
-        } else {
-          setDisplayState("question");
-        }
-      },
-      sequenceElements[currentIndex].match(/[+\-]/)
-        ? TIMING.symbolTime
-        : TIMING.numberTime
-    );
-
-    return () => clearTimeout(timer);
-  }, [currentIndex, displayState, sequenceElements]);
+  }, [sequence]);
 
   return (
     <div
@@ -151,11 +190,11 @@ export const MathProblem = (props: MathProblemProps) => {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
+      <TimeAlert open={timeAlertOpen} variant="warning" />
       <div className={`text-8xl ${firaCode.className}`}>
         {displayState === "fixation" && (
           <Plus className="w-16 h-16 text-zinc-400" />
         )}
-        {displayState === "sequence" && sequenceElements[currentIndex]}
       </div>
       {displayState === "question" && (
         <>
@@ -169,24 +208,25 @@ export const MathProblem = (props: MathProblemProps) => {
               isDraggable={!isDragging && displayState === "question"}
               onDragStart={handleCursorDragStart}
             />
-            <div className="text-2xl absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-zinc-200">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+              <Sequence
+                sequence={sequence}
+                isStarting={sequenceStarted}
+                shouldReset={!isDragging}
+                stimuliType="visual"
+              />
+            </div>
+            <div className="text-2xl absolute bottom-[40px] left-1/2 -translate-x-1/2 text-zinc-200">
               +
             </div>
-            {answers.map((answer, index) => {
-              const position = {
-                0: "top-5 left-0",
-                1: "top-5 right-0",
-                2: "bottom-5 left-0",
-                3: "bottom-5 right-0",
-              }[index];
-
-              return (
-                <Button
-                  key={index}
-                  variant="outline"
-                  className={`
-                    absolute 
-                    ${position} 
+            <div className="absolute top-5 left-0 right-0 flex flex-row justify-between px-5">
+              {[...answers]
+                .sort((a, b) => a - b)
+                .map((answer, index) => (
+                  <Button
+                    key={index}
+                    variant="outline"
+                    className={`
                     p-4 w-[125px] h-[125px] text-4xl ${firaCode.className}
                     ${
                       isDragging
@@ -198,11 +238,11 @@ export const MathProblem = (props: MathProblemProps) => {
                         : "bg-zinc-300 border-2 border-zinc-500"
                     }
                   `}
-                >
-                  {!isDragging ? "" : answer}
-                </Button>
-              );
-            })}
+                  >
+                    {!isDragging ? "" : answer}
+                  </Button>
+                ))}
+            </div>
           </div>
         </>
       )}

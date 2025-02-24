@@ -1,3 +1,7 @@
+import { auth, storage } from "@/config/firebase";
+import { SAVE_DATA } from "@/constants/block";
+import { DifficultyChoiceData, MathTrialData } from "@/types/analytics";
+import { ref, uploadString } from "firebase/storage";
 import { BadgeCheck, BadgeX } from "lucide-react";
 import { useState } from "react";
 import { DifficultyChoice } from "./difficulty";
@@ -5,6 +9,8 @@ import { MathProblem } from "./math";
 import { Problem } from "./page";
 
 export type TrialManagerProps = {
+  trialId: number;
+  revert: boolean;
   remaining: number;
   problem: Problem;
   difficulty: "easy" | "medium" | "hard";
@@ -12,12 +18,20 @@ export type TrialManagerProps = {
 };
 
 export const TrialManager = (props: TrialManagerProps) => {
-  const { remaining, problem, difficulty, onTrialComplete } = props;
+  const { trialId, revert, remaining, problem, difficulty, onTrialComplete } =
+    props;
   const [showFeedback, setShowFeedback] = useState<"success" | "error" | null>(
     null
   );
   const [isAnswered, setIsAnswered] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
+
+  const handleReset = () => {
+    setShowFeedback(null);
+    setIsAnswered(false);
+    setIsCorrect(false);
+    onTrialComplete(false, false);
+  };
 
   const handleComplete = (correct: boolean) => {
     setIsCorrect(correct);
@@ -48,6 +62,35 @@ export const TrialManager = (props: TrialManagerProps) => {
     onTrialComplete(isCorrect, giveUp);
   };
 
+  const handleDataCollection = async (
+    data: MathTrialData | DifficultyChoiceData
+  ) => {
+    if (!SAVE_DATA) {
+      console.log("Data saving is disabled");
+      return;
+    }
+
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error("No user found");
+        return;
+      }
+
+      const storagePath = `participants/${user.uid}`;
+      const type = "sequence" in data ? "math" : "difficulty";
+      const storageRef = ref(
+        storage,
+        `${storagePath}/trials/${data.trialId}_${type}.json`
+      );
+
+      await uploadString(storageRef, JSON.stringify(data, null, 2), "raw");
+      console.log(`Successfully saved trial ${data.trialId} ${type} data`);
+    } catch (error) {
+      console.error("Error saving trial data:", error);
+    }
+  };
+
   if (showFeedback) {
     return (
       <>
@@ -76,20 +119,26 @@ export const TrialManager = (props: TrialManagerProps) => {
     // Show difficulty choice only for incorrect answers on medium/hard difficulties
     return (
       <DifficultyChoice
+        revert={revert}
+        trialId={trialId}
         isCorrect={isCorrect}
         remaining={remaining}
         onChoice={handleDifficultyChoice}
+        onDataCollection={handleDataCollection}
       />
     );
   }
 
   return (
     <MathProblem
+      trialId={trialId}
       difficulty={difficulty}
       sequence={problem.sequence}
       answers={problem.answers}
       correctAnswer={problem.correctAnswer}
       onComplete={handleComplete}
+      onReset={handleReset}
+      onDataCollection={handleDataCollection}
     />
   );
 };

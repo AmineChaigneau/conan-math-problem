@@ -41,6 +41,7 @@ export default function Block() {
   const [correctAnswers, setCorrectAnswers] = useState(0);
   const [attempts, setAttempts] = useState(0);
   const [isEasyMode, setIsEasyMode] = useState(false);
+  const [isRevert] = useState(Math.random() < 0.5 ? true : false);
 
   useEffect(() => {
     try {
@@ -85,9 +86,9 @@ export default function Block() {
 
   return (
     <div className="relative h-full w-full bg-white">
-      <div className="absolute bottom-5 left-5 capitalize text-zinc-400">
+      {/* <div className="absolute bottom-5 left-5 capitalize text-zinc-400">
         {currentDifficulty} - {attempts}
-      </div>
+      </div> */}
       {!isLoaded && (
         <div className="fixed top-0 left-0 h-full w-full bg-black bg-opacity-30 flex items-center justify-center">
           <img src="/images/loading.svg" alt="Loading..." className="h-8" />
@@ -124,6 +125,8 @@ export default function Block() {
               </div>
             </div>
             <TrialManager
+              trialId={attempts}
+              revert={isRevert}
               remaining={NUM_CORRECT_ANSWERS - correctAnswers}
               problem={getCurrentProblem()}
               difficulty={currentDifficulty}
