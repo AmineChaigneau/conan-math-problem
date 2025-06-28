@@ -1,3 +1,5 @@
+"use client";
+
 import { TimeAlert } from "@/components/timeAlert";
 import { Button } from "@/components/ui/button";
 import Cursor from "@/components/ui/cursor";
@@ -7,7 +9,6 @@ import {
 } from "@/constants/block";
 import { useDeadline } from "@/hooks/deadline";
 import { useMouseTracking } from "@/hooks/useMouseTracking";
-import { DifficultyChoiceData } from "@/types/analytics";
 import { Fira_Code } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 
@@ -16,23 +17,60 @@ const firaCode = Fira_Code({
   display: "swap",
 });
 
-export type DifficultyProps = {
-  revert: boolean;
+interface TrialResults {
+  trialId: string | number;
+  stimuliSequence: string[];
+  responses: Array<{
+    stimulusIndex: number;
+    stimulusValue: string;
+    isMatchExpected: boolean;
+    userResponded: boolean;
+    reactionTime: number | null;
+    responseTime?: number;
+  }>;
+  summary: {
+    totalStimuli: number;
+    totalMatches: number;
+    correctHits: number;
+    falseAlarms: number;
+    misses: number;
+    correctRejections: number;
+    accuracy: number;
+    meanReactionTime: number | null;
+    hitRate: number;
+    falseAlarmRate: number;
+  };
+}
+
+interface NbackDifficultyChoiceData {
+  timeStamp: string;
   trialId: number;
-  isCorrect: boolean;
-  remaining: number;
-  onChoice: (giveUp: boolean) => void;
-  onDataCollection: (data: DifficultyChoiceData) => void;
+  trialResults: TrialResults;
+  currentLevel: number;
+  selectedChoice: "easier" | "continue";
+  mouseTrajectory: Array<{ x: number; y: number; timestamp: number }>;
+  initiationTime: number;
+  totalTime: number;
+  trialStartTime: number;
+}
+
+export type NbackDifficultyProps = {
+  trialId: number;
+  trialResults: TrialResults;
+  currentLevel: number;
+  remainingTrials: number;
+  onChoice: (switchToEasier: boolean) => void;
+  onDataCollection: (data: NbackDifficultyChoiceData) => void;
 };
 
-export const DifficultyChoice = ({
-  revert,
+export const NbackDifficultyChoice = ({
   trialId,
-  isCorrect,
-  remaining,
+  trialResults,
+  currentLevel,
+  remainingTrials,
   onChoice,
   onDataCollection,
-}: DifficultyProps) => {
+}: NbackDifficultyProps) => {
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [timeAlertOpen, setTimeAlertOpen] = useState(false);
@@ -75,8 +113,7 @@ export const DifficultyChoice = ({
       const rect = containerRef.current.getBoundingClientRect();
       setCursorPosition({
         x: rect.left + rect.width / 2,
-        y: rect.bottom - 50, // Position cursor at bottom center
-        // y: rect.top + rect.height / 2,
+        y: rect.bottom - 50,
       });
     }
   }, []);
@@ -118,7 +155,6 @@ export const DifficultyChoice = ({
       setCursorPosition({
         x: rect.left + rect.width / 2,
         y: rect.bottom - 50,
-        // y: rect.top + rect.height / 2,
       });
     }
   };
@@ -138,17 +174,16 @@ export const DifficultyChoice = ({
     const choiceButton = element?.closest("button");
 
     if (choiceButton) {
-      const isGiveUp =
-        choiceButton.textContent?.includes("Switch Easy") ?? false;
+      const isSwitchToEasier =
+        choiceButton.textContent?.includes("Switch to Easier") ?? false;
 
       // Collect difficulty choice data
-      const choiceData: DifficultyChoiceData = {
+      const choiceData: NbackDifficultyChoiceData = {
         timeStamp: new Date().toISOString(),
         trialId: trialId,
-        isCorrect,
-        remaining,
-        selectedChoice: isGiveUp ? "easier" : "continue",
-        revert: revert,
+        trialResults: trialResults,
+        currentLevel: currentLevel,
+        selectedChoice: isSwitchToEasier ? "easier" : "continue",
         mouseTrajectory: positions,
         initiationTime: dragStartTime.current
           ? dragStartTime.current - trialStartTime.current
@@ -158,7 +193,7 @@ export const DifficultyChoice = ({
       };
 
       onDataCollection(choiceData);
-      onChoice(isGiveUp);
+      onChoice(isSwitchToEasier);
     }
 
     resetCursorPosition();
@@ -176,9 +211,9 @@ export const DifficultyChoice = ({
     return () => window.removeEventListener("mouseup", handleGlobalMouseUp);
   }, [isDragging]);
 
-  // if (isCorrect) {
-  //   return null;
-  // }
+  // Get performance feedback
+  const accuracy = (trialResults.summary.accuracy * 100).toFixed(1);
+  const isGoodPerformance = trialResults.summary.accuracy >= 0.7; // 70% threshold
 
   return (
     <div
@@ -200,7 +235,9 @@ export const DifficultyChoice = ({
         <div className="absolute top-5 left-0 right-0 flex flex-row justify-between px-5">
           <Button
             className={`
-            p-4 w-[125px] h-[125px] text-xl ${firaCode.className} text-wrap
+            p-4 w-[150px] h-[125px] text-lg ${
+              firaCode.className
+            } text-wrap text-center
             ${
               isDragging
                 ? "border-2 border-orange-600"
@@ -209,12 +246,13 @@ export const DifficultyChoice = ({
           `}
             variant="outline"
           >
-            {/* {isDragging ? "Try Again" : ""} */}
-            {revert ? "Continue Difficult" : "Switch Easy"}
+            Switch to Easier Level
           </Button>
           <Button
             className={`
-            p-4 w-[125px] h-[125px] text-xl ${firaCode.className} text-wrap
+            p-4 w-[150px] h-[125px] text-lg ${
+              firaCode.className
+            } text-wrap text-center
             ${
               isDragging
                 ? "border-2 border-orange-600"
@@ -223,20 +261,41 @@ export const DifficultyChoice = ({
           `}
             variant="outline"
           >
-            {/* {isDragging ? "Make Easier" : ""} */}
-            {!revert ? "Continue Difficult" : "Switch Easy"}
+            Continue Current Level
           </Button>
         </div>
         <div
-          className={`absolute flex flex-col items-center justify-center gap-4 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center ${firaCode.className}`}
+          className={`absolute flex flex-col items-center justify-center gap-6 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center ${firaCode.className}`}
         >
-          <h1 className="text-6xl font-bold">
-            {isCorrect ? remaining - 1 : remaining}
-          </h1>
-          <h2 className="text-4xl">Remaining correct answers</h2>
-          <h3 className="text-lg">
-            Would you like to try another difficult problem <br /> or switch to
-            easier ones?
+          <div className="flex flex-col items-center gap-2">
+            <h1 className="text-6xl font-bold text-center">{accuracy}%</h1>
+            <h2 className="text-3xl">Trial Accuracy</h2>
+            <div
+              className={`text-lg ${
+                isGoodPerformance ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {isGoodPerformance ? "Good performance!" : "Room for improvement"}
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center gap-1 text-sm text-gray-600">
+            <div>Current Level: {currentLevel}-back</div>
+            <div>Trials remaining: {remainingTrials}</div>
+            <div>
+              Hits: {trialResults.summary.correctHits} | False Alarms:{" "}
+              {trialResults.summary.falseAlarms}
+            </div>
+            {trialResults.summary.meanReactionTime && (
+              <div>
+                Avg RT: {trialResults.summary.meanReactionTime.toFixed(0)}ms
+              </div>
+            )}
+          </div>
+
+          <h3 className="text-lg mt-4 max-w-md">
+            Would you like to continue with the current difficulty <br />
+            or switch to an easier level?
           </h3>
         </div>
       </div>

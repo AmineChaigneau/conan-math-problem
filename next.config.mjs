@@ -6,9 +6,7 @@ const nextConfig = {
   },
   distDir: ".next",
   output: "export",
-  experimental: {
-    serverActions: false,
-  },
+  experimental: {},
   typescript: {
     ignoreBuildErrors: false,
   },

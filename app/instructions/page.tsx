@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { GAMEMODE } from "@/constants/block";
 import { Fira_Code } from "next/font/google";
 import Link from "next/link";
 import { useState } from "react";
@@ -23,6 +24,14 @@ export default function Instructions() {
       ),
     },
     {
+      title: "Number Letter",
+      content: (
+        <div className="flex flex-col gap-8 text-justify">
+          <img src="/images/numberletter.png" alt="Numberletter" />
+        </div>
+      ),
+    },
+    {
       title: "How to Respond",
       content: (
         <div className="flex flex-col gap-8 text-justify">
@@ -34,7 +43,14 @@ export default function Instructions() {
       title: "Number Sequences",
       content: (
         <div className="flex flex-col gap-8 text-justify">
-          <img src="/images/numbersequences.png" alt="Numbersequences" />
+          <img
+            src={
+              GAMEMODE === "restart"
+                ? "/images/error_restart.png"
+                : "/images/gamemode_percent.png"
+            }
+            alt="Numbersequences"
+          />
         </div>
       ),
     },
@@ -42,7 +58,14 @@ export default function Instructions() {
       title: "Error",
       content: (
         <div className="flex flex-col gap-8 text-justify">
-          <img src="/images/error.png" alt="Error" />
+          <img
+            src={
+              GAMEMODE === "restart"
+                ? "/images/gamemode_restart.png"
+                : "/images/error_percent.png"
+            }
+            alt="Error"
+          />
         </div>
       ),
     },
@@ -51,14 +74,6 @@ export default function Instructions() {
       content: (
         <div className="flex flex-col gap-8 text-justify">
           <img src="/images/exampledifficulty.png" alt="Exampledifficulty" />
-        </div>
-      ),
-    },
-    {
-      title: "Single Choice",
-      content: (
-        <div className="flex flex-col gap-8 text-justify">
-          <img src="/images/singlechoice.png" alt="Singlechoice" />
         </div>
       ),
     },

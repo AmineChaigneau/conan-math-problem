@@ -8,10 +8,7 @@ export const CONSENT_TEXT = (
     <p>
       You will participate in a behavioral experiment that will contribute to
       our understanding of how people make trade-offs between effort and reward
-      under challenging conditions. You will be presented with a series of math
-      problems that vary in complexity. You will be asked to solve the problems
-      as quickly and accurately as possible. You can choose to continue with
-      difficult problems or stop for easier ones.
+      under challenging conditions.
     </p>
 
     <p>
