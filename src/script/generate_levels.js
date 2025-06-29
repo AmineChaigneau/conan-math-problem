@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // Simple script to generate levels.json from block.ts constants
-const fs = require("fs");
-const path = require("path");
+// const fs = require("fs");
+// const path = require("path");
 
 // Simple seeded random number generator (LCG)
 function seededRandom(seed) {

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { GAMEMODE, LEVELS_NB_TRAINING } from "@/constants/block";
 import levelsConfig from "@/constants/levels.json";
-import { ResponseData, TrialResults } from "@/types/nback";
+import { AttemptResults, ResponseData, TrialResults } from "@/types/nback";
 import { BadgeCheck, BadgeX } from "lucide-react";
 import { Fira_Code } from "next/font/google";
 import Link from "next/link";
@@ -45,7 +45,40 @@ export default function Training() {
   } | null>(null);
   const [lastResults, setLastResults] = useState<TrialResults | null>(null);
 
+  // Add attempt tracking for current trial
+  const [currentTrialAttempts, setCurrentTrialAttempts] = useState<
+    AttemptResults[]
+  >([]);
+
   const currentLevel = levelsConfig.trainingSequence[currentTrialIndex];
+
+  // Helper function to compile AttemptResults into TrialResults
+  const compileTrialResults = (attempts: AttemptResults[]): TrialResults => {
+    if (attempts.length === 0) {
+      throw new Error("No attempts to compile");
+    }
+
+    const firstAttempt = attempts[0];
+    const lastAttempt = attempts[attempts.length - 1];
+
+    // Use the last attempt's summary for completed trials
+    const lastSummary = lastAttempt.summary;
+
+    return {
+      stimuliSequence: firstAttempt.stimuliSequence,
+      totalAttempts: attempts.length,
+      overallAccuracy: lastSummary.accuracy, // Use last attempt's accuracy for training
+      attempts: attempts.map((attempt) => ({
+        attemptIndex: attempt.attemptIndex,
+        responses: attempt.responses,
+        startTime: attempt.startTime,
+        endTime: attempt.endTime,
+        isEasierSequence: false, // Training sequences are not easier sequences
+        difficultyChoiceData: undefined, // No difficulty choices in training
+      })),
+      summary: lastSummary, // Use last attempt's summary
+    };
+  };
 
   // Handle immediate error detection (restart mode only)
   const handleError = (errorData: {
@@ -70,10 +103,13 @@ export default function Training() {
       setCurrentAttempts((prev) => prev + 1);
     } else {
       // Continue to next sequence - create partial results for completion
-      const partialResults: TrialResults = {
+      const partialAttempt: AttemptResults = {
         trialId: `training-${currentTrialIndex + 1}-failed`,
-        stimuliSequence: [],
+        attemptIndex: currentAttempts,
         responses: [],
+        startTime: Date.now(),
+        endTime: Date.now(),
+        stimuliSequence: currentLevel.sequence,
         summary: {
           totalStimuli: 0,
           totalMatches: 0,
@@ -87,7 +123,11 @@ export default function Training() {
           falseAlarmRate: showRestartError?.errorType === "falseAlarm" ? 1 : 0,
         },
       };
-      handleTrialComplete(partialResults);
+
+      // Add the failed attempt and compile results
+      const failedAttempts = [...currentTrialAttempts, partialAttempt];
+      const trialResults = compileTrialResults(failedAttempts);
+      handleTrialComplete(trialResults);
     }
   };
 
@@ -107,8 +147,7 @@ export default function Training() {
 
     if (GAMEMODE === "restart") {
       // Track completion for restart mode
-      const wasCompleted =
-        results.trialId.toString().includes("failed") === false;
+      const wasCompleted = results.summary.accuracy > 0; // If accuracy > 0, it was completed (not a failed partial result)
       setTrainingAttempts((prev) => [
         ...prev,
         {
@@ -119,6 +158,7 @@ export default function Training() {
         },
       ]);
       setCurrentAttempts(1); // Reset attempts for next sequence
+      setCurrentTrialAttempts([]); // Reset attempts for next trial
       setCurrentTrialIndex((prev) => prev + 1);
       return;
     }
@@ -144,8 +184,20 @@ export default function Training() {
     // Show feedback for 2 seconds before moving to next trial
     setTimeout(() => {
       setShowFeedback(null);
+      setCurrentTrialAttempts([]); // Reset attempts for next trial
       setCurrentTrialIndex((prev) => prev + 1);
     }, 2000);
+  };
+
+  // Handle attempt completion from NbackComponent
+  const handleAttemptEnd = async (attemptResults: AttemptResults) => {
+    // Add attempt to current trial
+    const newAttempts = [...currentTrialAttempts, attemptResults];
+    setCurrentTrialAttempts(newAttempts);
+
+    // Compile the trial results and handle completion
+    const trialResults = compileTrialResults(newAttempts);
+    await handleTrialComplete(trialResults);
   };
 
   const isTrainingComplete = currentTrialIndex >= LEVELS_NB_TRAINING;
@@ -368,6 +420,7 @@ export default function Training() {
           trialId={`training-${
             currentTrialIndex + 1
           }-attempt-${currentAttempts}`}
+          attemptIndex={currentAttempts}
           N={currentLevel.N}
           stimulusset={levelsConfig.stimulusSet}
           stimulusTime={currentLevel.stimulusTime}
@@ -375,7 +428,7 @@ export default function Training() {
           sequenceLength={currentLevel.sequenceLength}
           targetKey={levelsConfig.targetKey}
           predefinedSequence={currentLevel.sequence}
-          onTrialEnd={handleTrialComplete}
+          onTrialEnd={handleAttemptEnd}
           onError={handleError}
         />
       </div>

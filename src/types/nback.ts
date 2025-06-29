@@ -1,28 +1,3 @@
-export interface TrialResults {
-  trialId: string | number;
-  stimuliSequence: string[];
-  responses: Array<{
-    stimulusIndex: number;
-    stimulusValue: string;
-    isMatchExpected: boolean;
-    userResponded: boolean;
-    reactionTime: number | null;
-    responseTime?: number;
-  }>;
-  summary: {
-    totalStimuli: number;
-    totalMatches: number;
-    correctHits: number;
-    falseAlarms: number;
-    misses: number;
-    correctRejections: number;
-    accuracy: number;
-    meanReactionTime: number | null;
-    hitRate: number;
-    falseAlarmRate: number;
-  };
-}
-
 export interface ResponseData {
   stimulusIndex: number;
   stimulusValue: string;
@@ -30,6 +5,54 @@ export interface ResponseData {
   userResponded: boolean;
   reactionTime: number | null;
   responseTime?: number;
+}
+
+export interface TrialSummary {
+  totalStimuli: number;
+  totalMatches: number;
+  correctHits: number;
+  falseAlarms: number;
+  misses: number;
+  correctRejections: number;
+  accuracy: number;
+  meanReactionTime: number | null;
+  hitRate: number;
+  falseAlarmRate: number;
+}
+
+export interface AttemptResults {
+  trialId: string | number;
+  attemptIndex: number;
+  responses: ResponseData[];
+  startTime: number;
+  endTime: number;
+  stimuliSequence: string[];
+  summary: TrialSummary;
+}
+
+// Simplified difficulty choice data (for storage in attempts)
+export interface SimplifiedDifficultyChoiceData {
+  selectedChoice: "easier" | "continue" | "restart";
+  mouseTrajectory: Array<{ x: number; y: number; timestamp: number }>;
+  initiationTime: number;
+  totalTime: number;
+}
+
+export interface TrialResults {
+  stimuliSequence: string[];
+  totalAttempts: number;
+  overallAccuracy: number;
+  // Array of attempts, each attempt is an object with the following properties:
+  attempts: Array<{
+    attemptIndex: number;
+    responses: ResponseData[];
+    startTime: number;
+    endTime: number;
+    isEasierSequence: boolean;
+    difficultyChoiceData?: SimplifiedDifficultyChoiceData;
+  }>;
+  // summary of the trial (all attempts)
+  summary: TrialSummary;
 }
 
 export interface NbackDifficultyChoiceData {

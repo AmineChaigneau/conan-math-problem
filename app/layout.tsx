@@ -29,7 +29,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased h-screen w-full user-select-none overflow-hidden`}
       >
-        <FullScreen isActive={false}>{children}</FullScreen>
+        <FullScreen isActive={true}>{children}</FullScreen>
       </body>
     </html>
   );

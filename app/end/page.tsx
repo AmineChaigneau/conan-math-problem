@@ -1,13 +1,24 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Fira_Code } from "next/font/google";
 import Link from "next/link";
+import { useEffect } from "react";
 
 const firaCode = Fira_Code({
   subsets: ["latin"],
   weight: ["400", "700"],
 });
 
+const LOCALSTORAGE_KEY = "nback-task-state";
+
 export default function End() {
+  // Clear the task state from localStorage when the component mounts
+  useEffect(() => {
+    localStorage.removeItem(LOCALSTORAGE_KEY);
+    console.log("Cleared nback-task-state from localStorage");
+  }, []);
+
   return (
     <div className="p-16 flex items-start justify-center gap-4 h-full w-full bg-[url('/images/background.svg')] bg-cover bg-center">
       <div className="flex flex-col w-full overflow-y-scroll gap-4 p-12 border-2 bg-white border-zinc-400 rounded-lg shadow-lg">

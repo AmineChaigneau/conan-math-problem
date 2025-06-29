@@ -21,8 +21,8 @@ export const DESCRIPTION = [
   "2-back (Medium)",
   "3-back (Hard)",
 ];
-export const STIMULUS_TIME = [1500, 800, 800];
-export const INTERTRIAL_INTERVAL = [1500, 1500, 1500];
+export const STIMULUS_TIME = [1500, 700, 700];
+export const INTERTRIAL_INTERVAL = [1200, 1200, 1200];
 export const SEQUENCE_LENGTH = [15, 15, 15];
 export const N = [1, 2, 3];
 

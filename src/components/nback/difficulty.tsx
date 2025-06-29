@@ -9,50 +9,14 @@ import {
 } from "@/constants/block";
 import { useDeadline } from "@/hooks/deadline";
 import { useMouseTracking } from "@/hooks/useMouseTracking";
+import { NbackDifficultyChoiceData, TrialResults } from "@/types/nback";
 import { Fira_Code } from "next/font/google";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 const firaCode = Fira_Code({
   subsets: ["latin"],
   display: "swap",
 });
-
-interface TrialResults {
-  trialId: string | number;
-  stimuliSequence: string[];
-  responses: Array<{
-    stimulusIndex: number;
-    stimulusValue: string;
-    isMatchExpected: boolean;
-    userResponded: boolean;
-    reactionTime: number | null;
-    responseTime?: number;
-  }>;
-  summary: {
-    totalStimuli: number;
-    totalMatches: number;
-    correctHits: number;
-    falseAlarms: number;
-    misses: number;
-    correctRejections: number;
-    accuracy: number;
-    meanReactionTime: number | null;
-    hitRate: number;
-    falseAlarmRate: number;
-  };
-}
-
-interface NbackDifficultyChoiceData {
-  timeStamp: string;
-  trialId: number;
-  trialResults: TrialResults;
-  currentLevel: number;
-  selectedChoice: "easier" | "continue";
-  mouseTrajectory: Array<{ x: number; y: number; timestamp: number }>;
-  initiationTime: number;
-  totalTime: number;
-  trialStartTime: number;
-}
 
 export type NbackDifficultyProps = {
   trialId: number;

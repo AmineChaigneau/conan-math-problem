@@ -8,24 +8,18 @@ import { ref, uploadString } from "firebase/storage";
 
 interface TrialDataToSave {
   // Basic trial information
-  trialResults: TrialResults;
+  trialResults: TrialResults; // This now contains all attempts with full data
+  trialStartTime: number;
   trialCompletionTime: string;
+  currentTrialNumber: number;
 
   // Block and sequence information
-  currentTrialNumber: number;
   currentBlockIndex: number;
-  trialInCurrentBlock: number;
+  attemptInCurrentBlock: number; // Number of attempt in block
   trialUniqueId: string | null; // From levels.json
 
-  // All attempts for this trial (including failures and successes)
-  allAttempts: Array<{
-    attemptNumber: number;
-    trialResults: TrialResults;
-    wasRestarted: boolean;
-    isEasierSequence: boolean;
-    difficultyChoiceData?: NbackDifficultyChoiceData;
-    timestamp: string;
-  }>;
+  // Additional context
+  wasRestarted: boolean;
 }
 
 interface SaveTrialDataParams {
@@ -37,10 +31,6 @@ interface SaveTrialDataParams {
   difficultyChoiceData?: NbackDifficultyChoiceData;
   trialUniqueId?: string | null;
 }
-
-// Store attempts for each trial to accumulate them
-const trialAttempts: { [trialNumber: number]: TrialDataToSave["allAttempts"] } =
-  {};
 
 export const saveTrialData = async (
   params: SaveTrialDataParams
@@ -54,53 +44,55 @@ export const saveTrialData = async (
     const timestamp = new Date().toISOString();
     const trialNumber = params.taskState.currentTrialNumber;
 
-    // Initialize attempts array for this trial if it doesn't exist
-    if (!trialAttempts[trialNumber]) {
-      trialAttempts[trialNumber] = [];
-    }
+    // Calculate trial duration from attempts
+    const firstAttempt = params.trialResults.attempts[0];
+    const lastAttempt =
+      params.trialResults.attempts[params.trialResults.attempts.length - 1];
+    const trialDuration = lastAttempt
+      ? lastAttempt.endTime - firstAttempt.startTime
+      : 0;
 
-    // Add this attempt to the trial's attempts
-    trialAttempts[trialNumber].push({
-      attemptNumber: params.attemptNumber || 1,
-      trialResults: params.trialResults,
+    // Create comprehensive trial data with all attempts included
+    const trialData: TrialDataToSave = {
+      // Basic trial information with all attempts
+      trialResults: params.trialResults, // Contains full trial data with all attempts
+      trialStartTime: firstAttempt.startTime,
+      trialCompletionTime: timestamp,
+      currentTrialNumber: trialNumber,
+
+      // Block and sequence information
+      currentBlockIndex: params.taskState.currentBlockIndex,
+      attemptInCurrentBlock: params.taskState.trialInCurrentBlock,
+      trialUniqueId: params.trialUniqueId || null,
+
+      // Additional context
       wasRestarted: params.wasRestarted || false,
-      isEasierSequence: params.isEasierSequence || false,
-      difficultyChoiceData: params.difficultyChoiceData,
-      timestamp,
+    };
+
+    // Save to Firebase Storage with detailed filename
+    const storagePath = `participants/${user.uid}/trials`;
+    const fileName = `trial_${params.trialUniqueId}_${trialNumber}.json`;
+    const storageRef = ref(storage, `${storagePath}/${fileName}`);
+
+    await uploadString(storageRef, JSON.stringify(trialData, null, 2), "raw");
+
+    console.log(`Trial data saved to Storage: ${fileName}`);
+    console.log(`- Total attempts: ${params.trialResults.totalAttempts}`);
+    console.log(
+      `- Overall accuracy: ${(
+        params.trialResults.overallAccuracy * 100
+      ).toFixed(1)}%`
+    );
+    console.log(`- Trial duration: ${trialDuration}ms`);
+
+    // Log attempt details
+    params.trialResults.attempts.forEach((attempt, index) => {
+      console.log(
+        `  Attempt ${index + 1}: ${attempt.responses.length} responses, ${
+          attempt.endTime - attempt.startTime
+        }ms`
+      );
     });
-
-    // Only save when trial is actually completed (not on restarts)
-    if (!params.wasRestarted) {
-      const trialData: TrialDataToSave = {
-        // Basic trial information
-        trialResults: params.trialResults,
-        trialCompletionTime: timestamp,
-
-        // Block and sequence information
-        currentTrialNumber: trialNumber,
-        currentBlockIndex: params.taskState.currentBlockIndex,
-        trialInCurrentBlock: params.taskState.trialInCurrentBlock,
-        trialUniqueId: params.trialUniqueId || null,
-
-        // All attempts for this trial
-        allAttempts: [...trialAttempts[trialNumber]],
-      };
-
-      // Save to Firebase Storage with simplified filename
-      const storagePath = `participants/${user.uid}/trials`;
-      const fileName = `trial_${trialNumber}_${timestamp.replace(
-        /[:.]/g,
-        "-"
-      )}.json`;
-      const storageRef = ref(storage, `${storagePath}/${fileName}`);
-
-      await uploadString(storageRef, JSON.stringify(trialData, null, 2), "raw");
-
-      console.log("Trial data saved to Storage:", fileName);
-
-      // Clear attempts for this trial after saving
-      delete trialAttempts[trialNumber];
-    }
   } catch (error) {
     console.error("Error saving trial data:", error);
     throw error;
@@ -121,6 +113,20 @@ export const saveSessionSummary = async (
 
     const timestamp = new Date().toISOString();
 
+    // Calculate comprehensive session statistics
+    const totalAttempts = allTrialResults.reduce(
+      (sum, trial) => sum + trial.totalAttempts,
+      0
+    );
+
+    // Calculate total trial duration from all attempts
+    const totalTrialDuration = allTrialResults.reduce((sum, trial) => {
+      if (trial.attempts.length === 0) return sum;
+      const firstAttempt = trial.attempts[0];
+      const lastAttempt = trial.attempts[trial.attempts.length - 1];
+      return sum + (lastAttempt.endTime - firstAttempt.startTime);
+    }, 0);
+
     const sessionSummary = {
       sessionId: taskState.sessionId,
       participantId: user.uid,
@@ -135,12 +141,19 @@ export const saveSessionSummary = async (
       })),
 
       totalTrials: allTrialResults.length,
+      totalAttempts: totalAttempts,
+      totalSessionDuration: totalTrialDuration,
 
       // Calculate summary statistics
       finalStats: {
         averageAccuracy:
           allTrialResults.reduce(
             (sum, trial) => sum + trial.summary.accuracy,
+            0
+          ) / allTrialResults.length,
+        averageOverallAccuracy:
+          allTrialResults.reduce(
+            (sum, trial) => sum + trial.overallAccuracy,
             0
           ) / allTrialResults.length,
         totalCorrectHits: allTrialResults.reduce(
@@ -161,8 +174,13 @@ export const saveSessionSummary = async (
           allTrialResults.filter(
             (trial) => trial.summary.meanReactionTime !== null
           ).length,
+        averageAttemptsPerTrial: totalAttempts / allTrialResults.length,
+        trialsWithMultipleAttempts: allTrialResults.filter(
+          (trial) => trial.totalAttempts > 1
+        ).length,
       },
 
+      // Full trial data with all attempts
       allTrialResults,
       allDifficultyChoices,
       timestamp,
@@ -180,6 +198,13 @@ export const saveSessionSummary = async (
     );
 
     console.log("Session summary saved to Storage:", fileName);
+    console.log(`- Total trials: ${allTrialResults.length}`);
+    console.log(`- Total attempts: ${totalAttempts}`);
+    console.log(
+      `- Average attempts per trial: ${(
+        totalAttempts / allTrialResults.length
+      ).toFixed(1)}`
+    );
   } catch (error) {
     console.error("Error saving session summary:", error);
     throw error;
@@ -208,28 +233,28 @@ export const saveTrainingData = async (
 
     const timestamp = new Date().toISOString();
 
-    const trainingData = {
-      // Basic trial information
-      trialResults,
-      participantId: user.uid,
-      trialCompletionTime: timestamp,
+    // Calculate training duration from attempts
+    const firstAttempt = trialResults.attempts[0];
+    const lastAttempt = trialResults.attempts[trialResults.attempts.length - 1];
+    const trainingDuration = lastAttempt
+      ? lastAttempt.endTime - firstAttempt.startTime
+      : 0;
 
-      // Training level information
+    const trainingData = {
+      trialResults: trialResults, // Full trial data with all attempts
       trainingLevel,
       attemptNumber,
-      isCompleted: !trialResults.trialId.toString().includes("failed"),
-
-      // Additional metadata
-      timestamp,
       gameMode,
-      taskType: "training",
+      timestamp,
+      trialDuration: trainingDuration,
+      totalAttempts: trialResults.totalAttempts,
     };
 
-    // ONLY save to Firebase Storage (skip Firestore)
+    // Save to Firebase Storage in training directory
     const storagePath = `participants/${user.uid}/training`;
-    const fileName = `training_${
-      trainingLevel.level
-    }_attempt_${attemptNumber}_${timestamp.replace(/[:.]/g, "-")}.json`;
+    const fileName = `training_level_${trainingLevel.level}_attempts_${
+      trialResults.totalAttempts
+    }_${timestamp.replace(/[:.]/g, "-")}.json`;
     const storageRef = ref(storage, `${storagePath}/${fileName}`);
 
     await uploadString(
@@ -239,6 +264,11 @@ export const saveTrainingData = async (
     );
 
     console.log("Training data saved to Storage:", fileName);
+    console.log(`- Training level: ${trainingLevel.description}`);
+    console.log(`- Total attempts: ${trialResults.totalAttempts}`);
+    console.log(
+      `- Final accuracy: ${(trialResults.summary.accuracy * 100).toFixed(1)}%`
+    );
   } catch (error) {
     console.error("Error saving training data:", error);
     throw error;

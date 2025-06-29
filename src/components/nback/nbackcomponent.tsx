@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { Progress } from "@/components/ui/progress";
 import { IS_CHECKPOINT } from "@/constants/block";
+import { AttemptResults, ResponseData, TrialSummary } from "@/types/nback";
 import { Fira_Code } from "next/font/google";
 
 const firaCode = Fira_Code({
@@ -11,37 +12,9 @@ const firaCode = Fira_Code({
   display: "swap",
 });
 
-interface ResponseData {
-  stimulusIndex: number;
-  stimulusValue: string;
-  isMatchExpected: boolean;
-  userResponded: boolean;
-  reactionTime: number | null;
-  responseTime?: number;
-}
-
-interface TrialSummary {
-  totalStimuli: number;
-  totalMatches: number;
-  correctHits: number;
-  falseAlarms: number;
-  misses: number;
-  correctRejections: number;
-  accuracy: number;
-  meanReactionTime: number | null;
-  hitRate: number;
-  falseAlarmRate: number;
-}
-
-interface TrialResults {
-  trialId: string | number;
-  stimuliSequence: string[];
-  responses: ResponseData[];
-  summary: TrialSummary;
-}
-
 interface NbackComponentProps {
   trialId: string | number;
+  attemptIndex?: number; // Add attempt index
   N: number;
   stimulusset: string[];
   stimulusTime: number; // 500-1500ms
@@ -50,7 +23,7 @@ interface NbackComponentProps {
   targetKey?: string; // Default to spacebar
   predefinedSequence?: string[]; // Use predefined sequence from levels.json
   restartFromIndex?: number; // Index to restart from (for checkpoint mode)
-  onTrialEnd: (results: TrialResults) => void;
+  onTrialEnd: (results: AttemptResults) => void;
   onError?: (errorData: {
     stimulusIndex: number;
     errorType: "miss" | "falseAlarm";
@@ -61,6 +34,7 @@ interface NbackComponentProps {
 
 export const NbackComponent: React.FC<NbackComponentProps> = ({
   trialId,
+  attemptIndex = 1,
   N,
   stimulusset,
   stimulusTime,
@@ -83,6 +57,9 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     "preparing" | "showing" | "interval" | "completed"
   >("preparing");
   const [overallProgress, setOverallProgress] = useState(0);
+
+  // Add attempt timing
+  const attemptStartTimeRef = useRef<number>(0);
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const stimuliRef = useRef<string[]>([]);
@@ -246,6 +223,9 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     // Update checkpoint reference
     lastCheckpointRef.current = restartFromIndex;
 
+    // Set attempt start time
+    attemptStartTimeRef.current = Date.now();
+
     // Start the trial after a brief delay
     timeoutRef.current = setTimeout(() => {
       startNextStimulus(restartFromIndex);
@@ -258,6 +238,7 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     };
   }, [
     trialId,
+    attemptIndex,
     N,
     stimulusset,
     stimulusTime,
@@ -383,6 +364,7 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
   const calculateAndSendResults = useCallback(() => {
     const finalResponses = responsesRef.current;
     const sequence = stimuliRef.current;
+    const endTime = Date.now();
 
     let correctHits = 0;
     let falseAlarms = 0;
@@ -439,15 +421,18 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
       falseAlarmRate,
     };
 
-    const results: TrialResults = {
+    const results: AttemptResults = {
       trialId,
-      stimuliSequence: sequence,
+      attemptIndex,
       responses: finalResponses,
+      startTime: attemptStartTimeRef.current,
+      endTime,
+      stimuliSequence: sequence,
       summary,
     };
 
     onTrialEnd(results);
-  }, [trialId, onTrialEnd]);
+  }, [trialId, attemptIndex, onTrialEnd]);
 
   // Keyboard event listener
   useEffect(() => {

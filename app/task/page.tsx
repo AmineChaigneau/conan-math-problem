@@ -14,6 +14,7 @@ import {
   TOTAL_SEQUENCES,
 } from "@/constants/block";
 import {
+  AttemptResults,
   BlockSequence,
   NbackDifficultyChoiceData,
   NbackDifficultyRestartData,
@@ -70,6 +71,12 @@ export default function TaskPage() {
     number | null
   >(null);
 
+  // Add trial attempt tracking
+  const [currentTrialAttempts, setCurrentTrialAttempts] = useState<
+    AttemptResults[]
+  >([]);
+  const [trialStartTime, setTrialStartTime] = useState<number>(0);
+
   const router = useRouter();
 
   // Initialize or load task state from localStorage
@@ -120,6 +127,100 @@ export default function TaskPage() {
 
     setTaskState(newState);
     console.log("Initialized new session with block order:", blockOrder);
+  };
+
+  // Helper function to compile AttemptResults into TrialResults
+  const compileTrialResults = (
+    attempts: AttemptResults[],
+    isEasierSequence: boolean,
+    difficultyChoiceData?: NbackDifficultyChoiceData
+  ): TrialResults => {
+    if (attempts.length === 0) {
+      throw new Error("No attempts to compile");
+    }
+
+    const firstAttempt = attempts[0];
+    const lastAttempt = attempts[attempts.length - 1];
+
+    // Compile overall summary from all attempts
+    let totalCorrectHits = 0;
+    let totalFalseAlarms = 0;
+    let totalMisses = 0;
+    let totalCorrectRejections = 0;
+    let totalMatches = 0;
+    let totalStimuli = 0;
+    const allReactionTimes: number[] = [];
+
+    attempts.forEach((attempt) => {
+      totalCorrectHits += attempt.summary.correctHits;
+      totalFalseAlarms += attempt.summary.falseAlarms;
+      totalMisses += attempt.summary.misses;
+      totalCorrectRejections += attempt.summary.correctRejections;
+      totalMatches += attempt.summary.totalMatches;
+      totalStimuli += attempt.summary.totalStimuli;
+
+      // Collect reaction times from successful attempts
+      if (attempt.summary.meanReactionTime) {
+        attempt.responses.forEach((response) => {
+          if (response.reactionTime) {
+            allReactionTimes.push(response.reactionTime);
+          }
+        });
+      }
+    });
+
+    const overallAccuracy =
+      totalStimuli > 0
+        ? (totalCorrectHits + totalCorrectRejections) / totalStimuli
+        : 0;
+    const meanReactionTime =
+      allReactionTimes.length > 0
+        ? allReactionTimes.reduce((a, b) => a + b, 0) / allReactionTimes.length
+        : null;
+    const hitRate = totalMatches > 0 ? totalCorrectHits / totalMatches : 0;
+    const falseAlarmRate =
+      totalStimuli - totalMatches > 0
+        ? totalFalseAlarms / (totalStimuli - totalMatches)
+        : 0;
+
+    // Convert difficulty choice data to simplified format if provided
+    const simplifiedDifficultyChoiceData = difficultyChoiceData
+      ? {
+          selectedChoice: difficultyChoiceData.selectedChoice as
+            | "easier"
+            | "continue"
+            | "restart",
+          mouseTrajectory: difficultyChoiceData.mouseTrajectory,
+          initiationTime: difficultyChoiceData.initiationTime,
+          totalTime: difficultyChoiceData.totalTime,
+        }
+      : undefined;
+
+    return {
+      stimuliSequence: firstAttempt.stimuliSequence,
+      totalAttempts: attempts.length,
+      overallAccuracy,
+      attempts: attempts.map((attempt) => ({
+        attemptIndex: attempt.attemptIndex,
+        responses: attempt.responses,
+        startTime: attempt.startTime,
+        endTime: attempt.endTime,
+        isEasierSequence: isEasierSequence,
+        difficultyChoiceData: simplifiedDifficultyChoiceData,
+      })),
+      summary: {
+        totalStimuli: lastAttempt.summary.totalStimuli, // Use the sequence length
+        totalMatches: lastAttempt.summary.totalMatches,
+        correctHits: totalCorrectHits,
+        falseAlarms: totalFalseAlarms,
+        misses: totalMisses,
+        correctRejections: totalCorrectRejections,
+        accuracy: overallAccuracy,
+        meanReactionTime,
+        hitRate,
+        falseAlarmRate,
+      },
+    };
   };
 
   // Get current level configuration using constants directly
@@ -233,16 +334,33 @@ export default function TaskPage() {
     ? TOTAL_SEQUENCES - taskState.currentTrialNumber + 1
     : TOTAL_SEQUENCES;
 
-  // Handle trial completion
-  const handleTrialEnd = async (results: TrialResults) => {
+  // Initialize trial start time when starting a new trial
+  useEffect(() => {
+    if (taskPhase === "trial" && currentTrialAttempts.length === 0) {
+      setTrialStartTime(Date.now());
+    }
+  }, [taskPhase, currentTrialAttempts.length]);
+
+  // Handle attempt completion
+  const handleAttemptEnd = async (attemptResults: AttemptResults) => {
     if (!taskState) return;
 
-    setLastTrialResults(results);
-    setAllTrialResults((prev) => [...prev, results]);
+    // Add attempt to current trial
+    const newAttempts = [...currentTrialAttempts, attemptResults];
+    setCurrentTrialAttempts(newAttempts);
+
+    // Compile the trial results
+    const trialResults = compileTrialResults(
+      newAttempts,
+      isEasierSequence,
+      lastDifficultyChoiceData || undefined
+    );
+    setLastTrialResults(trialResults);
+    setAllTrialResults((prev) => [...prev, trialResults]);
 
     // Save trial data to Firebase Storage
     await saveTrialData({
-      trialResults: results,
+      trialResults: trialResults,
       taskState: taskState,
       attemptNumber: currentAttemptNumber,
       isEasierSequence: isEasierSequence,
@@ -261,7 +379,8 @@ export default function TaskPage() {
       setIsEasierSequence(false);
     }
 
-    // Reset checkpoint index and easy sequence selection for new sequence
+    // Reset for next trial
+    setCurrentTrialAttempts([]);
     setCheckpointIndex(0);
     setSelectedEasySequenceIndex(null);
 
@@ -271,7 +390,7 @@ export default function TaskPage() {
         // Save session summary
         await saveSessionSummary(
           taskState,
-          [...allTrialResults, results],
+          [...allTrialResults, trialResults],
           allDifficultyChoices
         );
         console.log("Session summary saved successfully");
@@ -323,10 +442,16 @@ export default function TaskPage() {
     checkpointIndex: number;
   }) => {
     if (GAMEMODE === "restart") {
-      const partialResults: TrialResults = {
-        trialId: `trial-${taskState?.currentTrialNumber || 0}-partial`,
-        stimuliSequence: [],
+      // Create a partial attempt result for the failed attempt
+      const partialAttempt: AttemptResults = {
+        trialId: `trial-${
+          taskState?.currentTrialNumber || 0
+        }-attempt-${currentAttemptNumber}`,
+        attemptIndex: currentAttemptNumber,
         responses: errorData.currentResponses,
+        startTime: trialStartTime,
+        endTime: Date.now(),
+        stimuliSequence: currentLevel.sequence || [],
         summary: {
           totalStimuli: errorData.currentResponses.length,
           totalMatches: 0,
@@ -341,7 +466,17 @@ export default function TaskPage() {
         },
       };
 
-      setLastTrialResults(partialResults);
+      // Add this failed attempt to the current trial
+      const newAttempts = [...currentTrialAttempts, partialAttempt];
+      setCurrentTrialAttempts(newAttempts);
+
+      // Compile partial trial results
+      const partialTrialResults = compileTrialResults(
+        newAttempts,
+        isEasierSequence,
+        lastDifficultyChoiceData || undefined
+      );
+      setLastTrialResults(partialTrialResults);
 
       // Store the checkpoint index for potential restart
       setCheckpointIndex(errorData.checkpointIndex);
@@ -376,6 +511,9 @@ export default function TaskPage() {
       setCurrentLevelIndex(null);
       setCheckpointIndex(0); // Reset checkpoint for new sequence
     }
+
+    // Reset trial attempts for new trial
+    setCurrentTrialAttempts([]);
 
     // Always move to next trial when choosing in percent mode
     const newTrialInBlock = taskState.trialInCurrentBlock + 1;
@@ -429,6 +567,9 @@ export default function TaskPage() {
       setCurrentLevelIndex(null);
       setCheckpointIndex(0); // Reset checkpoint for new sequence
       setSelectedEasySequenceIndex(null); // Reset easy sequence selection for new sequence
+
+      // Reset trial attempts for new trial
+      setCurrentTrialAttempts([]);
 
       // Move to next trial
       const newTrialInBlock = taskState.trialInCurrentBlock + 1;
@@ -508,6 +649,7 @@ export default function TaskPage() {
                   isEasierSequence ? "-easier" : ""
                 }`
           }
+          attemptIndex={currentAttemptNumber}
           N={currentLevel.N}
           stimulusset={levelsConfig.stimulusSet}
           stimulusTime={currentLevel.stimulusTime}
@@ -516,7 +658,7 @@ export default function TaskPage() {
           targetKey={levelsConfig.targetKey}
           predefinedSequence={currentLevel.sequence || undefined}
           restartFromIndex={shouldRestartSameSequence ? checkpointIndex : 0}
-          onTrialEnd={handleTrialEnd}
+          onTrialEnd={handleAttemptEnd}
           onError={handleError}
         />
       </div>
