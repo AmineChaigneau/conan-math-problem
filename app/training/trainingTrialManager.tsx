@@ -1,7 +1,7 @@
 "use client";
 
 import { GAMEMODE } from "@/constants/block";
-import { ResponseData, TrainingLevel, TrialResults } from "@/types/nback";
+import { AttemptResults, ResponseData, TrainingLevel } from "@/types/nback";
 import { BadgeCheck, BadgeX } from "lucide-react";
 import { useState } from "react";
 import { NbackComponent } from "../../src/components/nback/nbackcomponent";
@@ -11,13 +11,19 @@ import levelsConfig from "../../src/constants/levels.json";
 type TrainingTrialManagerProps = {
   trainingLevel: TrainingLevel;
   trialIndex: number;
-  onTrialComplete: (results: TrialResults) => void;
+  attemptNumber: number;
+  onTrialComplete: (wasSuccessful: boolean) => void;
   onRestartSameSequence?: () => void;
 };
 
 export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
-  const { trainingLevel, trialIndex, onTrialComplete, onRestartSameSequence } =
-    props;
+  const {
+    trainingLevel,
+    trialIndex,
+    attemptNumber,
+    onTrialComplete,
+    onRestartSameSequence,
+  } = props;
   const [showFeedback, setShowFeedback] = useState<"success" | "error" | null>(
     null
   );
@@ -25,7 +31,7 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     errorType: "miss" | "falseAlarm";
     show: boolean;
   } | null>(null);
-  const [lastResults, setLastResults] = useState<TrialResults | null>(null);
+  const [lastResults, setLastResults] = useState<AttemptResults | null>(null);
 
   console.log("Training level being used:", trainingLevel);
 
@@ -53,34 +59,17 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
         onRestartSameSequence();
       }
     } else {
-      // Continue to next sequence - create partial results for completion
-      const partialResults: TrialResults = {
-        trialId: `training-trial-${trialIndex + 1}-failed`,
-        stimuliSequence: [],
-        responses: [],
-        summary: {
-          totalStimuli: 0,
-          totalMatches: 0,
-          correctHits: 0,
-          falseAlarms: showRestartError?.errorType === "falseAlarm" ? 1 : 0,
-          misses: showRestartError?.errorType === "miss" ? 1 : 0,
-          correctRejections: 0,
-          accuracy: 0,
-          meanReactionTime: null,
-          hitRate: 0,
-          falseAlarmRate: showRestartError?.errorType === "falseAlarm" ? 1 : 0,
-        },
-      };
-      onTrialComplete(partialResults);
+      // Continue to next sequence - mark as failed
+      onTrialComplete(false);
     }
   };
 
-  const handleTrialEnd = (results: TrialResults) => {
+  const handleAttemptEnd = (results: AttemptResults) => {
     setLastResults(results);
 
     if (GAMEMODE === "restart") {
-      // In restart mode, if we completed without errors, just continue
-      onTrialComplete(results);
+      // In restart mode, if we completed without errors, mark as successful
+      onTrialComplete(true);
       return;
     }
 
@@ -105,7 +94,7 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     // Show feedback for 2 seconds before moving to next trial
     setTimeout(() => {
       setShowFeedback(null);
-      onTrialComplete(results);
+      onTrialComplete(isGoodPerformance);
     }, 2000);
   };
 
@@ -157,13 +146,14 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     <div className="w-full h-screen">
       <NbackComponent
         trialId={`training-trial-${trialIndex + 1}`}
+        attemptIndex={attemptNumber}
         N={trainingLevel.N}
         stimulusset={levelsConfig.stimulusSet}
         stimulusTime={trainingLevel.stimulusTime}
         intertrialInterval={trainingLevel.intertrialInterval}
         sequenceLength={trainingLevel.sequenceLength}
         targetKey={levelsConfig.targetKey}
-        onTrialEnd={handleTrialEnd}
+        onTrialEnd={handleAttemptEnd}
         onError={handleError}
       />
     </div>

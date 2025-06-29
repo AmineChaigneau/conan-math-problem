@@ -619,7 +619,7 @@ export default function TaskPage() {
   // Trial phase
   if (taskPhase === "trial") {
     return (
-      <div className="relative h-screen">
+      <div className="relative h-screen bg-white">
         {/* Progress bar */}
         <div className="fixed top-0 left-1/2 -translate-x-1/2 h-[75px] w-3/4 flex flex-col items-center justify-center gap-2">
           <Progress
@@ -668,7 +668,7 @@ export default function TaskPage() {
   // Difficulty choice phase
   if (taskPhase === "difficulty" && lastTrialResults) {
     return (
-      <div className="h-screen">
+      <div className="h-screen bg-white">
         <NbackDifficultyChoice
           trialId={taskState.currentTrialNumber}
           trialResults={lastTrialResults}
@@ -684,7 +684,7 @@ export default function TaskPage() {
   // Difficulty choice phase for restart mode
   if (taskPhase === "difficulty_restart" && lastTrialResults) {
     return (
-      <div className="h-screen">
+      <div className="h-screen bg-white">
         <NbackDifficultyRestart
           trialId={taskState.currentTrialNumber}
           trialResults={lastTrialResults}

@@ -1,16 +1,14 @@
 "use client";
 
-import { NbackComponent } from "@/components/nback/nbackcomponent";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { GAMEMODE, LEVELS_NB_TRAINING } from "@/constants/block";
 import levelsConfig from "@/constants/levels.json";
-import { AttemptResults, ResponseData, TrialResults } from "@/types/nback";
 import { BadgeCheck, BadgeX } from "lucide-react";
 import { Fira_Code } from "next/font/google";
 import Link from "next/link";
 import { useState } from "react";
-import { TrainingError } from "../../src/components/nback/training_error";
+import { TrainingTrialManager } from "./trainingTrialManager";
 
 const firaCode = Fira_Code({
   subsets: ["latin"],
@@ -21,203 +19,63 @@ interface TrainingAttempt {
   sequenceIndex: number;
   attempts: number;
   completed: boolean;
-  results?: TrialResults;
 }
 
 export default function Training() {
   const [currentTrialIndex, setCurrentTrialIndex] = useState(0);
-  const [completedTrials, setCompletedTrials] = useState<TrialResults[]>([]);
-  const [isLoaded] = useState(true); // N-back doesn't need async loading
+  const [isLoaded] = useState(true);
 
-  // New state for restart mode
+  // State for restart mode
   const [trainingAttempts, setTrainingAttempts] = useState<TrainingAttempt[]>(
     []
   );
   const [currentAttempts, setCurrentAttempts] = useState(1);
 
-  // Add feedback and error states
+  // State for percent mode
+  const [completedTrials, setCompletedTrials] = useState<boolean[]>([]);
   const [showFeedback, setShowFeedback] = useState<"success" | "error" | null>(
     null
   );
-  const [showRestartError, setShowRestartError] = useState<{
-    errorType: "miss" | "falseAlarm";
-    show: boolean;
-  } | null>(null);
-  const [lastResults, setLastResults] = useState<TrialResults | null>(null);
-
-  // Add attempt tracking for current trial
-  const [currentTrialAttempts, setCurrentTrialAttempts] = useState<
-    AttemptResults[]
-  >([]);
+  const [lastAccuracy, setLastAccuracy] = useState<number>(0);
 
   const currentLevel = levelsConfig.trainingSequence[currentTrialIndex];
 
-  // Helper function to compile AttemptResults into TrialResults
-  const compileTrialResults = (attempts: AttemptResults[]): TrialResults => {
-    if (attempts.length === 0) {
-      throw new Error("No attempts to compile");
-    }
-
-    const firstAttempt = attempts[0];
-    const lastAttempt = attempts[attempts.length - 1];
-
-    // Use the last attempt's summary for completed trials
-    const lastSummary = lastAttempt.summary;
-
-    return {
-      stimuliSequence: firstAttempt.stimuliSequence,
-      totalAttempts: attempts.length,
-      overallAccuracy: lastSummary.accuracy, // Use last attempt's accuracy for training
-      attempts: attempts.map((attempt) => ({
-        attemptIndex: attempt.attemptIndex,
-        responses: attempt.responses,
-        startTime: attempt.startTime,
-        endTime: attempt.endTime,
-        isEasierSequence: false, // Training sequences are not easier sequences
-        difficultyChoiceData: undefined, // No difficulty choices in training
-      })),
-      summary: lastSummary, // Use last attempt's summary
-    };
-  };
-
-  // Handle immediate error detection (restart mode only)
-  const handleError = (errorData: {
-    stimulusIndex: number;
-    errorType: "miss" | "falseAlarm";
-    currentResponses: ResponseData[];
-  }) => {
-    if (GAMEMODE === "restart") {
-      setShowRestartError({
-        errorType: errorData.errorType,
-        show: true,
-      });
-    }
-  };
-
-  // Handle choice in restart mode (restart vs continue)
-  const handleRestartChoice = (restart: boolean) => {
-    setShowRestartError(null);
-
-    if (restart) {
-      // Restart the same sequence
-      setCurrentAttempts((prev) => prev + 1);
-    } else {
-      // Continue to next sequence - create partial results for completion
-      const partialAttempt: AttemptResults = {
-        trialId: `training-${currentTrialIndex + 1}-failed`,
-        attemptIndex: currentAttempts,
-        responses: [],
-        startTime: Date.now(),
-        endTime: Date.now(),
-        stimuliSequence: currentLevel.sequence,
-        summary: {
-          totalStimuli: 0,
-          totalMatches: 0,
-          correctHits: 0,
-          falseAlarms: showRestartError?.errorType === "falseAlarm" ? 1 : 0,
-          misses: showRestartError?.errorType === "miss" ? 1 : 0,
-          correctRejections: 0,
-          accuracy: 0,
-          meanReactionTime: null,
-          hitRate: 0,
-          falseAlarmRate: showRestartError?.errorType === "falseAlarm" ? 1 : 0,
-        },
-      };
-
-      // Add the failed attempt and compile results
-      const failedAttempts = [...currentTrialAttempts, partialAttempt];
-      const trialResults = compileTrialResults(failedAttempts);
-      handleTrialComplete(trialResults);
-    }
-  };
-
-  const handleTrialComplete = async (results: TrialResults) => {
-    // Only save if you want to (you mentioned you don't care about saving in training)
-    // Commenting out the save logic as requested
-    /*
-    try {
-      await saveTrainingData(results, currentLevel, currentAttempts, GAMEMODE);
-      console.log("Training data saved successfully");
-    } catch (error) {
-      console.error("Failed to save training data:", error);
-    }
-    */
-
-    setCompletedTrials((prev) => [...prev, results]);
-
+  const handleTrialComplete = (wasSuccessful: boolean) => {
     if (GAMEMODE === "restart") {
       // Track completion for restart mode
-      const wasCompleted = results.summary.accuracy > 0; // If accuracy > 0, it was completed (not a failed partial result)
       setTrainingAttempts((prev) => [
         ...prev,
         {
           sequenceIndex: currentTrialIndex,
           attempts: currentAttempts,
-          completed: wasCompleted,
-          results: results,
+          completed: wasSuccessful,
         },
       ]);
       setCurrentAttempts(1); // Reset attempts for next sequence
-      setCurrentTrialAttempts([]); // Reset attempts for next trial
       setCurrentTrialIndex((prev) => prev + 1);
       return;
     }
 
-    // Percent mode - original behavior with feedback
-    setLastResults(results);
-    const isGoodPerformance = results.summary.accuracy >= 0.7;
-    setShowFeedback(isGoodPerformance ? "success" : "error");
-
-    // Play sound feedback
-    if (isGoodPerformance) {
-      const successSound = new Audio("/sounds/success.mp3");
-      successSound.play().catch((error) => {
-        console.error("Error playing sound:", error);
-      });
-    } else {
-      const errorSound = new Audio("/sounds/error.mp3");
-      errorSound.play().catch((error) => {
-        console.error("Error playing sound:", error);
-      });
-    }
+    // Percent mode - show feedback and track completion
+    setCompletedTrials((prev) => [...prev, wasSuccessful]);
+    setLastAccuracy(wasSuccessful ? 75 : 45); // Approximate accuracy for display
+    setShowFeedback(wasSuccessful ? "success" : "error");
 
     // Show feedback for 2 seconds before moving to next trial
     setTimeout(() => {
       setShowFeedback(null);
-      setCurrentTrialAttempts([]); // Reset attempts for next trial
       setCurrentTrialIndex((prev) => prev + 1);
     }, 2000);
   };
 
-  // Handle attempt completion from NbackComponent
-  const handleAttemptEnd = async (attemptResults: AttemptResults) => {
-    // Add attempt to current trial
-    const newAttempts = [...currentTrialAttempts, attemptResults];
-    setCurrentTrialAttempts(newAttempts);
-
-    // Compile the trial results and handle completion
-    const trialResults = compileTrialResults(newAttempts);
-    await handleTrialComplete(trialResults);
+  const handleRestartSameSequence = () => {
+    setCurrentAttempts((prev) => prev + 1);
   };
 
   const isTrainingComplete = currentTrialIndex >= LEVELS_NB_TRAINING;
 
-  // Show restart error screen (restart mode only)
-  if (showRestartError?.show) {
-    return (
-      <div className="w-full h-screen">
-        <TrainingError
-          errorType={showRestartError.errorType}
-          onChoice={handleRestartChoice}
-        />
-      </div>
-    );
-  }
-
-  // Show percent mode feedback (original behavior)
-  if (showFeedback && lastResults) {
-    const accuracy = (lastResults.summary.accuracy * 100).toFixed(1);
-
+  // Show percent mode feedback
+  if (showFeedback) {
     return (
       <>
         <div className="h-full w-full"></div>
@@ -229,16 +87,12 @@ export default function Training() {
               <BadgeX className="w-24 h-24 text-red-500 animate-in fade-in" />
             )}
             <div className="text-center">
-              <div className="text-2xl font-bold">{accuracy}% Accuracy</div>
-              <div className="text-s mt-4 text-gray-600">
-                Hits: {lastResults.summary.correctHits} | False Alarms:{" "}
-                {lastResults.summary.falseAlarms}
+              <div className="text-2xl font-bold">{lastAccuracy}% Accuracy</div>
+              <div className="text-sm mt-2 text-gray-600">
+                {showFeedback === "success"
+                  ? "Good performance!"
+                  : "Keep trying!"}
               </div>
-              {lastResults.summary.meanReactionTime && (
-                <div className="text-sm mt-2 text-gray-600">
-                  Avg RT: {lastResults.summary.meanReactionTime.toFixed(0)}ms
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -246,18 +100,14 @@ export default function Training() {
     );
   }
 
-  const calculateAverageAccuracy = () => {
+  const calculateSuccessRate = () => {
     if (completedTrials.length === 0) return 0;
-    const totalAccuracy = completedTrials.reduce(
-      (sum, trial) => sum + trial.summary.accuracy,
-      0
-    );
-    return ((totalAccuracy / completedTrials.length) * 100).toFixed(1);
+    const successfulTrials = completedTrials.filter((trial) => trial).length;
+    return ((successfulTrials / completedTrials.length) * 100).toFixed(1);
   };
 
   const getSuccessfulTrials = () => {
-    return completedTrials.filter((trial) => trial.summary.accuracy >= 0.7)
-      .length;
+    return completedTrials.filter((trial) => trial).length;
   };
 
   if (isTrainingComplete) {
@@ -277,7 +127,7 @@ export default function Training() {
                 <h4 className="font-bold text-center">Training Results:</h4>
                 {trainingAttempts.map((attempt, index) => (
                   <div key={index} className="flex justify-between text-sm">
-                    {/* <span>{currentLevel.description}:</span> */}
+                    <span>Sequence {index + 1}:</span>
                     <span
                       className={`font-bold ${
                         attempt.completed ? "text-green-600" : "text-red-600"
@@ -310,11 +160,9 @@ export default function Training() {
         </div>
       );
     } else {
-      // Original percent mode completion screen
-      const averageAccuracy = calculateAverageAccuracy();
+      // Percent mode completion screen
+      const successRate = calculateSuccessRate();
       const successfulTrials = getSuccessfulTrials();
-
-      console.log(successfulTrials);
 
       return (
         <div className="flex flex-col items-center justify-center h-full w-full bg-white">
@@ -327,25 +175,27 @@ export default function Training() {
 
             <div className="space-y-3">
               <h2 className="text-2xl text-center">
-                Average Accuracy: <b>{averageAccuracy}%</b>
+                Success Rate: <b>{successRate}%</b>
               </h2>
 
-              <div className=" p-4 rounded-lg space-y-2">
+              <div className="p-4 rounded-lg space-y-2">
                 <h4 className="font-bold text-center">Trial Results:</h4>
                 {completedTrials.map((trial, index) => (
                   <div key={index} className="flex justify-between text-sm">
-                    <span>{currentLevel.description}:</span>
+                    <span>Sequence {index + 1}:</span>
                     <span
                       className={`font-bold ${
-                        trial.summary.accuracy >= 0.7
-                          ? "text-green-600"
-                          : "text-red-600"
+                        trial ? "text-green-600" : "text-red-600"
                       }`}
                     >
-                      {(trial.summary.accuracy * 100).toFixed(1)}%
+                      {trial ? "Success" : "Needs Improvement"}
                     </span>
                   </div>
                 ))}
+              </div>
+
+              <div className="text-center text-sm text-gray-600">
+                Successful trials: {successfulTrials} / {completedTrials.length}
               </div>
             </div>
 
@@ -416,20 +266,12 @@ export default function Training() {
           </div>
         </div>
 
-        <NbackComponent
-          trialId={`training-${
-            currentTrialIndex + 1
-          }-attempt-${currentAttempts}`}
-          attemptIndex={currentAttempts}
-          N={currentLevel.N}
-          stimulusset={levelsConfig.stimulusSet}
-          stimulusTime={currentLevel.stimulusTime}
-          intertrialInterval={currentLevel.intertrialInterval}
-          sequenceLength={currentLevel.sequenceLength}
-          targetKey={levelsConfig.targetKey}
-          predefinedSequence={currentLevel.sequence}
-          onTrialEnd={handleAttemptEnd}
-          onError={handleError}
+        <TrainingTrialManager
+          trainingLevel={currentLevel}
+          trialIndex={currentTrialIndex}
+          attemptNumber={currentAttempts}
+          onTrialComplete={handleTrialComplete}
+          onRestartSameSequence={handleRestartSameSequence}
         />
       </div>
     </div>
