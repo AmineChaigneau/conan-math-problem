@@ -2,20 +2,9 @@
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import {
-  DESCRIPTION,
-  GAMEMODE,
-  INTERTRIAL_INTERVAL,
-  N,
-  NB_BLOCKS,
-  NB_TRIALS_PER_BLOCK,
-  SEQUENCE_LENGTH,
-  STIMULUS_TIME,
-  TOTAL_SEQUENCES,
-} from "@/constants/block";
+import { GAMEMODE, TOTAL_SEQUENCES } from "@/constants/block";
 import {
   AttemptResults,
-  BlockSequence,
   NbackDifficultyChoiceData,
   NbackDifficultyRestartData,
   ResponseData,
@@ -23,14 +12,17 @@ import {
   TaskState,
   TrialResults,
 } from "@/types/nback";
+import { generateSequenceFromMatches } from "@/utils/generateSequenceFromMatches";
+import {
+  generateSequenceOrder,
+  getSequenceByIndex,
+} from "@/utils/generateSequenceOrder";
 import { saveSessionSummary, saveTrialData } from "@/utils/saveTrialData";
 import { Fira_Code } from "next/font/google";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { NbackDifficultyChoice } from "../../src/components/nback/difficulty";
 import { NbackDifficultyRestart } from "../../src/components/nback/difficulty_restart";
 import { NbackComponent } from "../../src/components/nback/nbackcomponent";
-import levelsConfig from "../../src/constants/levels.json";
 
 const firaCode = Fira_Code({
   subsets: ["latin"],
@@ -38,6 +30,7 @@ const firaCode = Fira_Code({
 });
 
 const LOCALSTORAGE_KEY = "nback-task-state";
+const CHECKPOINT_KEY = "nback-checkpoints";
 
 export default function TaskPage() {
   const [taskPhase, setTaskPhase] = useState<TaskPhase>("trial");
@@ -52,36 +45,26 @@ export default function TaskPage() {
   const [shouldRestartSameSequence, setShouldRestartSameSequence] =
     useState(false);
   const [isEasierSequence, setIsEasierSequence] = useState(false);
-
-  // Add attempt tracking
   const [currentAttemptNumber, setCurrentAttemptNumber] = useState(1);
   const [lastDifficultyChoiceData, setLastDifficultyChoiceData] =
     useState<NbackDifficultyChoiceData | null>(null);
-
-  // Add sequence tracking
-  const [currentLevelIndex, setCurrentLevelIndex] = useState<number | null>(
-    null
-  );
-
-  // Add checkpoint tracking
-  const [checkpointIndex, setCheckpointIndex] = useState<number>(0);
-
-  // Add easy sequence tracking
-  const [selectedEasySequenceIndex, setSelectedEasySequenceIndex] = useState<
-    number | null
-  >(null);
-
-  // Add trial attempt tracking
   const [currentTrialAttempts, setCurrentTrialAttempts] = useState<
     AttemptResults[]
   >([]);
   const [trialStartTime, setTrialStartTime] = useState<number>(0);
+
+  // Checkpoint management states
+  const [currentCheckpointIndex, setCurrentCheckpointIndex] = useState(0);
+  const [checkpointData, setCheckpointData] = useState<{
+    [trialNumber: number]: number;
+  }>({});
 
   const router = useRouter();
 
   // Initialize or load task state from localStorage
   useEffect(() => {
     const savedState = localStorage.getItem(LOCALSTORAGE_KEY);
+    const savedCheckpoints = localStorage.getItem(CHECKPOINT_KEY);
 
     if (savedState) {
       try {
@@ -95,6 +78,20 @@ export default function TaskPage() {
     } else {
       initializeNewSession();
     }
+
+    // Load checkpoint data
+    if (savedCheckpoints) {
+      try {
+        const parsedCheckpoints = JSON.parse(savedCheckpoints);
+        setCheckpointData(parsedCheckpoints);
+        console.log(
+          "Loaded checkpoint data from localStorage:",
+          parsedCheckpoints
+        );
+      } catch (error) {
+        console.error("Failed to parse checkpoint data:", error);
+      }
+    }
   }, []);
 
   // Save task state to localStorage whenever it changes
@@ -104,29 +101,23 @@ export default function TaskPage() {
     }
   }, [taskState]);
 
+  // Save checkpoint data to localStorage whenever it changes
+  useEffect(() => {
+    if (Object.keys(checkpointData).length > 0) {
+      localStorage.setItem(CHECKPOINT_KEY, JSON.stringify(checkpointData));
+    }
+  }, [checkpointData]);
+
   const initializeNewSession = () => {
-    // Randomly assign block order: [medium, hard] or [hard, medium]
-    const blockOrder =
-      Math.random() < 0.5 ? ["medium", "hard"] : ["hard", "medium"];
-
-    const blockSequence: BlockSequence[] = blockOrder.map(
-      (difficulty, index) => ({
-        blockNumber: index + 1,
-        difficulty: difficulty as "medium" | "hard",
-        levelIndex: difficulty === "medium" ? 1 : 2, // Medium = index 1, Hard = index 2
-      })
-    );
-
+    const sequenceOrder = generateSequenceOrder(TOTAL_SEQUENCES);
     const newState: TaskState = {
       currentTrialNumber: 1,
-      currentBlockIndex: 0,
-      blockSequence,
-      trialInCurrentBlock: 1,
+      sequenceOrder: sequenceOrder,
       sessionId: `session-${Date.now()}`,
     };
 
     setTaskState(newState);
-    console.log("Initialized new session with block order:", blockOrder);
+    console.log("Initialized new session with randomized sequence order");
   };
 
   // Helper function to compile AttemptResults into TrialResults
@@ -209,7 +200,7 @@ export default function TaskPage() {
         difficultyChoiceData: simplifiedDifficultyChoiceData,
       })),
       summary: {
-        totalStimuli: lastAttempt.summary.totalStimuli, // Use the sequence length
+        totalStimuli: lastAttempt.summary.totalStimuli,
         totalMatches: lastAttempt.summary.totalMatches,
         correctHits: totalCorrectHits,
         falseAlarms: totalFalseAlarms,
@@ -223,109 +214,44 @@ export default function TaskPage() {
     };
   };
 
-  // Get current level configuration using constants directly
+  // Get current level configuration
   const getCurrentLevel = () => {
     if (isEasierSequence) {
-      // Use predefined easy sequences from levels.json
-      let easyIndex = selectedEasySequenceIndex;
-
-      // If no easy sequence selected yet, randomly choose one from the first 40 (easy) sequences
-      if (easyIndex === null) {
-        easyIndex = Math.floor(Math.random() * 40); // levels 0-39 are 1-back (Easy)
-        setSelectedEasySequenceIndex(easyIndex);
-      }
-
-      const easyLevel = levelsConfig.nbackLevels[easyIndex];
-
-      if (easyLevel) {
-        return {
-          level: easyLevel.level,
-          N: easyLevel.N,
-          stimulusTime: easyLevel.stimulusTime,
-          intertrialInterval: easyLevel.intertrialInterval,
-          sequenceLength: easyLevel.sequenceLength,
-          description: easyLevel.description,
-          sequence: easyLevel.sequence,
-          uniqueId: easyLevel.uniqueId,
-        };
-      }
-
-      // Fallback to constants if easy level not found
       return {
         level: 0,
-        N: N[0], // 1
-        stimulusTime: STIMULUS_TIME[0], // 1500
-        intertrialInterval: INTERTRIAL_INTERVAL[0], // 1500
-        sequenceLength: SEQUENCE_LENGTH[0], // 15
-        description: DESCRIPTION[0], // "1-back (Easy)"
-        sequence: null,
-        uniqueId: null,
+        N: 1,
+        stimulusTime: 1000,
+        intertrialInterval: 1200,
+        sequenceLength: 15,
+        description: "1-back (Easy)",
       };
     }
 
     if (!taskState) {
-      // Default to medium if no task state
       return {
         level: 1,
-        N: N[1], // 2
-        stimulusTime: STIMULUS_TIME[1], // 1000
-        intertrialInterval: INTERTRIAL_INTERVAL[1], // 1500
-        sequenceLength: SEQUENCE_LENGTH[1], // 15
-        description: DESCRIPTION[1], // "2-back (Medium)"
-        sequence: null,
-        uniqueId: null,
+        N: 2,
+        stimulusTime: 1000,
+        intertrialInterval: 1200,
+        sequenceLength: 15,
+        description: "2-back - Short",
       };
     }
 
-    const currentBlock = taskState.blockSequence[taskState.currentBlockIndex];
-    const difficultyIndex = currentBlock.levelIndex;
-
-    // Calculate level index from levels.json based on current trial and difficulty
-    let levelIndex = currentLevelIndex;
-    if (!shouldRestartSameSequence && levelIndex === null) {
-      // Calculate which level from levels.json to use
-      // For medium difficulty (index 1): levels 41-80 (indices 40-79)
-      // For hard difficulty (index 2): levels 81-120 (indices 80-119)
-      const baseIndex = difficultyIndex === 1 ? 40 : 80; // Medium starts at 40, Hard at 80
-      const trialInDifficulty = taskState.trialInCurrentBlock - 1; // 0-based
-      levelIndex = baseIndex + trialInDifficulty;
-
-      // Set the level index so it persists for restarts
-      setCurrentLevelIndex(levelIndex);
-    }
-
-    // Get the level from levels.json
-    const level =
-      (levelIndex !== null && levelsConfig.nbackLevels[levelIndex]) || null;
-
-    console.log("Current block:", currentBlock);
-    console.log("Difficulty index:", difficultyIndex);
-    console.log("Level index:", levelIndex);
-    console.log("Level from JSON:", level);
-
-    if (!level) {
-      // Fallback to constants if level not found
-      return {
-        level: difficultyIndex,
-        N: N[difficultyIndex],
-        stimulusTime: STIMULUS_TIME[difficultyIndex],
-        intertrialInterval: INTERTRIAL_INTERVAL[difficultyIndex],
-        sequenceLength: SEQUENCE_LENGTH[difficultyIndex],
-        description: DESCRIPTION[difficultyIndex],
-        sequence: null,
-        uniqueId: null,
-      };
-    }
+    // Get the current sequence from the randomized order
+    const currentSequenceIndex = taskState.currentTrialNumber - 1;
+    const currentSequence = getSequenceByIndex(
+      taskState.sequenceOrder,
+      currentSequenceIndex
+    );
 
     return {
-      level: level.level,
-      N: level.N,
-      stimulusTime: level.stimulusTime,
-      intertrialInterval: level.intertrialInterval,
-      sequenceLength: level.sequenceLength,
-      description: level.description,
-      sequence: level.sequence,
-      uniqueId: level.uniqueId,
+      level: currentSequence.level,
+      N: currentSequence.N,
+      stimulusTime: currentSequence.stimulusTime,
+      intertrialInterval: currentSequence.intertrialInterval,
+      sequenceLength: currentSequence.sequenceLength,
+      description: currentSequence.description,
     };
   };
 
@@ -366,14 +292,20 @@ export default function TaskPage() {
       isEasierSequence: isEasierSequence,
       wasRestarted: shouldRestartSameSequence,
       difficultyChoiceData: lastDifficultyChoiceData || undefined,
-      trialUniqueId: currentLevel.uniqueId, // Pass the unique ID from levels.json
+      trialUniqueId: `trial-${taskState.currentTrialNumber}`,
     });
     console.log("Trial data saved successfully");
+
+    // Clear checkpoint for current trial since it completed successfully
+    const newCheckpointData = { ...checkpointData };
+    delete newCheckpointData[taskState.currentTrialNumber];
+    setCheckpointData(newCheckpointData);
+    setCurrentCheckpointIndex(0);
 
     // Reset flags after trial completion
     if (shouldRestartSameSequence) {
       setShouldRestartSameSequence(false);
-      setCurrentAttemptNumber(1); // Reset attempt count after successful completion
+      setCurrentAttemptNumber(1);
     }
     if (isEasierSequence) {
       setIsEasierSequence(false);
@@ -381,8 +313,6 @@ export default function TaskPage() {
 
     // Reset for next trial
     setCurrentTrialAttempts([]);
-    setCheckpointIndex(0);
-    setSelectedEasySequenceIndex(null);
 
     // Check if this is the last trial
     if (taskState.currentTrialNumber >= TOTAL_SEQUENCES) {
@@ -398,32 +328,16 @@ export default function TaskPage() {
         console.error("Failed to save session summary:", error);
       }
 
-      localStorage.removeItem(LOCALSTORAGE_KEY); // Clear saved state on completion
-      // Redirect to scales page
+      // Clean up all localStorage data
+      localStorage.removeItem(LOCALSTORAGE_KEY);
+      localStorage.removeItem(CHECKPOINT_KEY);
       window.location.href = "/scales";
       return;
     } else {
-      // Move to next trial - clear level index to get new sequence
-      setCurrentLevelIndex(null);
-
-      const newTrialInBlock = taskState.trialInCurrentBlock + 1;
-      let newBlockIndex = taskState.currentBlockIndex;
-      let newTrialInCurrentBlock = newTrialInBlock;
-
-      // Check if we need to move to next block
-      if (
-        newTrialInBlock > NB_TRIALS_PER_BLOCK &&
-        taskState.currentBlockIndex < NB_BLOCKS - 1
-      ) {
-        newBlockIndex = taskState.currentBlockIndex + 1;
-        newTrialInCurrentBlock = 1;
-      }
-
+      // Move to next trial
       setTaskState({
         ...taskState,
         currentTrialNumber: taskState.currentTrialNumber + 1,
-        currentBlockIndex: newBlockIndex,
-        trialInCurrentBlock: newTrialInCurrentBlock,
       });
 
       if (GAMEMODE === "restart") {
@@ -439,9 +353,22 @@ export default function TaskPage() {
     stimulusIndex: number;
     errorType: "miss" | "falseAlarm";
     currentResponses: ResponseData[];
-    checkpointIndex: number;
+    lastCheckpoint: number;
   }) => {
     if (GAMEMODE === "restart") {
+      // Save checkpoint for current trial
+      if (taskState) {
+        const newCheckpointData = {
+          ...checkpointData,
+          [taskState.currentTrialNumber]: errorData.lastCheckpoint,
+        };
+        setCheckpointData(newCheckpointData);
+        setCurrentCheckpointIndex(errorData.lastCheckpoint);
+        console.log(
+          `Error at index ${errorData.stimulusIndex}, last checkpoint saved at index ${errorData.lastCheckpoint}`
+        );
+      }
+
       // Create a partial attempt result for the failed attempt
       const partialAttempt: AttemptResults = {
         trialId: `trial-${
@@ -451,7 +378,7 @@ export default function TaskPage() {
         responses: errorData.currentResponses,
         startTime: trialStartTime,
         endTime: Date.now(),
-        stimuliSequence: currentLevel.sequence || [],
+        stimuliSequence: [],
         summary: {
           totalStimuli: errorData.currentResponses.length,
           totalMatches: 0,
@@ -478,16 +405,16 @@ export default function TaskPage() {
       );
       setLastTrialResults(partialTrialResults);
 
-      // Store the checkpoint index for potential restart
-      setCheckpointIndex(errorData.checkpointIndex);
-
       // If already in easier sequence, just restart automatically
       if (isEasierSequence) {
         setTaskPhase("auto_restart");
         // Auto-restart after showing FAIL message
         setTimeout(() => {
           setShouldRestartSameSequence(true);
-          // Keep the checkpoint index for restart
+          // Keep the current checkpoint index for restart
+          console.log(
+            `Auto-restarting from checkpoint index: ${currentCheckpointIndex}`
+          );
           setTaskPhase("trial");
         }, 1000);
       } else {
@@ -501,38 +428,16 @@ export default function TaskPage() {
     if (!taskState) return;
 
     if (switchToEasier) {
-      // Generate a NEW 1-back (Easy) sequence - clear level index and easy sequence selection
       setIsEasierSequence(true);
-      setCurrentLevelIndex(null);
-      setCheckpointIndex(0); // Reset checkpoint for new sequence
-      setSelectedEasySequenceIndex(null); // Reset easy sequence selection for new sequence
-    } else {
-      // Continue with current difficulty - clear level index for new sequence
-      setCurrentLevelIndex(null);
-      setCheckpointIndex(0); // Reset checkpoint for new sequence
     }
 
     // Reset trial attempts for new trial
     setCurrentTrialAttempts([]);
 
-    // Always move to next trial when choosing in percent mode
-    const newTrialInBlock = taskState.trialInCurrentBlock + 1;
-    let newBlockIndex = taskState.currentBlockIndex;
-    let newTrialInCurrentBlock = newTrialInBlock;
-
-    if (
-      newTrialInBlock > NB_TRIALS_PER_BLOCK &&
-      taskState.currentBlockIndex < NB_BLOCKS - 1
-    ) {
-      newBlockIndex = taskState.currentBlockIndex + 1;
-      newTrialInCurrentBlock = 1;
-    }
-
+    // Move to next trial
     setTaskState({
       ...taskState,
       currentTrialNumber: taskState.currentTrialNumber + 1,
-      currentBlockIndex: newBlockIndex,
-      trialInCurrentBlock: newTrialInCurrentBlock,
     });
 
     setTaskPhase("trial");
@@ -562,42 +467,29 @@ export default function TaskPage() {
     if (!taskState) return;
 
     if (switchToEasier) {
-      // Generate a NEW 1-back (Easy) sequence - clear level index and easy sequence selection
       setIsEasierSequence(true);
-      setCurrentLevelIndex(null);
-      setCheckpointIndex(0); // Reset checkpoint for new sequence
-      setSelectedEasySequenceIndex(null); // Reset easy sequence selection for new sequence
 
       // Reset trial attempts for new trial
       setCurrentTrialAttempts([]);
 
       // Move to next trial
-      const newTrialInBlock = taskState.trialInCurrentBlock + 1;
-      let newBlockIndex = taskState.currentBlockIndex;
-      let newTrialInCurrentBlock = newTrialInBlock;
-
-      if (
-        newTrialInBlock > NB_TRIALS_PER_BLOCK &&
-        taskState.currentBlockIndex < NB_BLOCKS - 1
-      ) {
-        newBlockIndex = taskState.currentBlockIndex + 1;
-        newTrialInCurrentBlock = 1;
-      }
-
       setTaskState({
         ...taskState,
         currentTrialNumber: taskState.currentTrialNumber + 1,
-        currentBlockIndex: newBlockIndex,
-        trialInCurrentBlock: newTrialInCurrentBlock,
       });
 
       setShouldRestartSameSequence(false);
-      setCurrentAttemptNumber(1); // Reset attempts when switching to easier
+      setCurrentAttemptNumber(1);
+      // Clear checkpoint for this trial since we're moving to easier sequence
+      setCurrentCheckpointIndex(0);
     } else {
-      // Restart same sequence - KEEP the same level index, checkpoint index, and easy sequence index
+      // Restart from checkpoint
       setShouldRestartSameSequence(true);
-      setCurrentAttemptNumber((prev) => prev + 1); // Increment attempt count
-      // Note: We DON'T call setCurrentLevelIndex(null), setCheckpointIndex(0), or setSelectedEasySequenceIndex(null) here - this preserves the same sequence and checkpoint
+      setCurrentAttemptNumber((prev) => prev + 1);
+      // Keep the current checkpoint index for restart
+      console.log(
+        `Restarting from checkpoint index: ${currentCheckpointIndex}`
+      );
     }
 
     setTaskPhase("trial");
@@ -611,13 +503,73 @@ export default function TaskPage() {
     );
   }
 
-  // Get current block info for display
-  const currentBlock = taskState.blockSequence[taskState.currentBlockIndex];
-  const currentBlockDescription =
-    currentBlock.difficulty === "medium" ? "2-back (Medium)" : "3-back (Hard)";
-
   // Trial phase
   if (taskPhase === "trial") {
+    // Generate the main sequence first to ensure consistency
+    let mainSequence: string[] = [];
+    let ghostLetters: string[] = [];
+
+    if (taskState) {
+      const currentSequence = getSequenceByIndex(
+        taskState.sequenceOrder,
+        taskState.currentTrialNumber - 1
+      );
+
+      // Generate the sequence once with a consistent seed
+      const actualN = isEasierSequence ? 1 : currentLevel.N;
+      const consistentSeed =
+        parseInt(taskState.sessionId.split("-")[1]) +
+        taskState.currentTrialNumber * 1000 +
+        currentAttemptNumber;
+
+      // Get the matches array - either from the predefined sequence or generate for easier
+      let matchesArray: number[];
+      if (isEasierSequence) {
+        // Generate consistent easier matches using the same seed
+        matchesArray = new Array(currentLevel.sequenceLength)
+          .fill(0)
+          .map((_, i) => {
+            if (i >= 1) {
+              // Use consistent pseudo-random based on seed and index
+              const pseudoRandom =
+                ((consistentSeed + i) * 1664525 + 1013904223) % 4294967296;
+              return pseudoRandom / 4294967296 < 0.3 ? 1 : 0;
+            }
+            return 0;
+          });
+      } else {
+        matchesArray = currentSequence.matches || [];
+      }
+
+      mainSequence = generateSequenceFromMatches(
+        matchesArray,
+        actualN,
+        consistentSeed
+      );
+
+      console.log("Main sequence generated:", mainSequence);
+      console.log("Matches array used:", matchesArray);
+
+      // Generate ghost letters if restarting from checkpoint
+      if (shouldRestartSameSequence && currentCheckpointIndex > 0) {
+        // For N-back, we need the N previous letters: [checkpoint-N, ..., checkpoint-1]
+        for (let i = actualN; i >= 1; i--) {
+          const ghostIndex = currentCheckpointIndex - i;
+          if (ghostIndex >= 0) {
+            ghostLetters.push(mainSequence[ghostIndex]);
+          }
+        }
+
+        console.log(
+          `Generated ghost letters for checkpoint ${currentCheckpointIndex} (N=${actualN}):`,
+          ghostLetters,
+          `(indices: ${ghostLetters
+            .map((_, i) => currentCheckpointIndex - actualN + i)
+            .filter((idx) => idx >= 0)})`
+        );
+      }
+    }
+
     return (
       <div className="relative h-screen bg-white">
         {/* Progress bar */}
@@ -629,15 +581,8 @@ export default function TaskPage() {
           <div
             className={`text-sm text-zinc-400 ${firaCode.className} text-center`}
           >
-            {taskState.currentTrialNumber} / {TOTAL_SEQUENCES}
-          </div>
-        </div>
-        {/* Trial counter */}
-        <div className="absolute bottom-5 left-5">
-          <div
-            className={`flex items-center justify-center px-4 py-2 bg-orange-500 rounded-lg shadow-lg ${firaCode.className} text-white text-center min-w-[120px] w-fit`}
-          >
-            {isEasierSequence ? "1-back (Easy)" : currentBlockDescription}
+            Sequence completed: {taskState.currentTrialNumber} /{" "}
+            {TOTAL_SEQUENCES}
           </div>
         </div>
 
@@ -651,31 +596,33 @@ export default function TaskPage() {
           }
           attemptIndex={currentAttemptNumber}
           N={currentLevel.N}
-          stimulusset={levelsConfig.stimulusSet}
           stimulusTime={currentLevel.stimulusTime}
           intertrialInterval={currentLevel.intertrialInterval}
           sequenceLength={currentLevel.sequenceLength}
-          targetKey={levelsConfig.targetKey}
-          predefinedSequence={currentLevel.sequence || undefined}
-          restartFromIndex={shouldRestartSameSequence ? checkpointIndex : 0}
+          targetKey={"click"}
+          startFromIndex={
+            shouldRestartSameSequence ? currentCheckpointIndex : 0
+          }
+          ghostLetters={ghostLetters.length > 0 ? ghostLetters : undefined}
+          predefinedSequence={
+            mainSequence.length > 0 ? mainSequence : undefined
+          }
+          matches={
+            // Only pass matches if we're not using predefined sequence
+            mainSequence.length > 0
+              ? undefined
+              : isEasierSequence
+              ? new Array(currentLevel.sequenceLength)
+                  .fill(0)
+                  .map((_, i) => (i >= 1 && Math.random() < 0.3 ? 1 : 0))
+              : getSequenceByIndex(
+                  taskState.sequenceOrder,
+                  taskState.currentTrialNumber - 1
+                ).matches || []
+          }
+          currentTrialIndex={taskState.currentTrialNumber}
           onTrialEnd={handleAttemptEnd}
           onError={handleError}
-        />
-      </div>
-    );
-  }
-
-  // Difficulty choice phase
-  if (taskPhase === "difficulty" && lastTrialResults) {
-    return (
-      <div className="h-screen bg-white">
-        <NbackDifficultyChoice
-          trialId={taskState.currentTrialNumber}
-          trialResults={lastTrialResults}
-          currentLevel={currentLevel.N}
-          remainingTrials={remainingTrials}
-          onChoice={handleDifficultyChoice}
-          onDataCollection={handleDifficultyDataCollection}
         />
       </div>
     );
@@ -706,10 +653,13 @@ export default function TaskPage() {
         <div className="text-center space-y-8">
           <div className="text-6xl font-bold text-red-600 mb-4">FAIL</div>
           <div className="text-2xl text-gray-700">
-            Sequence Failed - Restarting Same Sequence
+            Sequence Failed - Restarting from Checkpoint
           </div>
           <div className="text-lg text-gray-500">
             Already at easiest level (1-back Easy)
+          </div>
+          <div className="text-lg text-blue-600">
+            Checkpoint: Position {currentCheckpointIndex + 1}
           </div>
           <div className="text-sm text-gray-400 mt-8">
             Automatically restarting in 1 second...

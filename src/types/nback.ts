@@ -79,17 +79,20 @@ export interface NbackDifficultyRestartData {
   trialStartTime: number;
 }
 
-export interface BlockSequence {
-  blockNumber: number;
-  difficulty: "medium" | "hard"; // "2-back (Medium)" or "3-back (Hard)"
-  levelIndex: number; // Index in levelsConfig.nbackLevels
+export interface SequenceLevel {
+  level: number;
+  uniqueId: string;
+  N: number;
+  stimulusTime: number;
+  intertrialInterval: number;
+  sequenceLength: number;
+  description: string;
+  matches: number[];
 }
 
 export interface TaskState {
   currentTrialNumber: number;
-  currentBlockIndex: number;
-  blockSequence: BlockSequence[];
-  trialInCurrentBlock: number;
+  sequenceOrder: SequenceLevel[];
   sessionId: string;
 }
 
@@ -107,4 +110,5 @@ export interface TrainingLevel {
   intertrialInterval: number;
   sequenceLength: number;
   description: string;
+  matches: number[];
 }

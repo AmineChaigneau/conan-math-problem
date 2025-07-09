@@ -13,17 +13,11 @@ function seededRandom(seed) {
   };
 }
 
-// Generate stimulus sequence with controlled number of matches
-function generateStimulusSequence(length, stimulusSet, nBack, seed) {
+// Generate matches array with controlled number of matches
+function generateMatchesArray(length, nBack, matchResponseRate, seed) {
   const rng = seededRandom(seed);
-  const sequence = [];
-  const targetMatchRate = 0.3; // Aim for ~30% matches
-  const numMatches = Math.floor(length * targetMatchRate);
-
-  // Fill initial N positions randomly
-  for (let i = 0; i < Math.min(nBack, length); i++) {
-    sequence.push(stimulusSet[Math.floor(rng() * stimulusSet.length)]);
-  }
+  const matches = new Array(length).fill(0); // Initialize matches array with 0s
+  const numMatches = Math.ceil(length * matchResponseRate); // Round UP for fixed number of matches
 
   // Create matches at specific positions
   const matchPositions = new Set();
@@ -36,24 +30,16 @@ function generateStimulusSequence(length, stimulusSet, nBack, seed) {
     attemptsLeft--;
   }
 
-  // Fill remaining positions
+  // Mark match positions
   for (let i = nBack; i < length; i++) {
     if (matchPositions.has(i)) {
-      // This should be a match
-      sequence.push(sequence[i - nBack]);
+      matches[i] = 1; // Mark as match position
     } else {
-      // This should not be a match
-      let stimulus;
-      let attempts = 0;
-      do {
-        stimulus = stimulusSet[Math.floor(rng() * stimulusSet.length)];
-        attempts++;
-      } while (stimulus === sequence[i - nBack] && attempts < 10);
-      sequence.push(stimulus);
+      matches[i] = 0; // Mark as non-match position
     }
   }
 
-  return sequence;
+  return matches;
 }
 
 // Read the block.ts file and extract constants
@@ -66,15 +52,11 @@ function extractConstants() {
 
   // Extract LEVELS_NB
   const levelsNbMatch = content.match(/export const LEVELS_NB = (\d+);/);
-  constants.LEVELS_NB = levelsNbMatch ? parseInt(levelsNbMatch[1]) : 40;
+  constants.LEVELS_NB = levelsNbMatch ? parseInt(levelsNbMatch[1]) : 20;
 
-  // Extract DIFFICULTY_NB
-  const difficultyNbMatch = content.match(
-    /export const DIFFICULTY_NB = (\d+);/
-  );
-  constants.DIFFICULTY_NB = difficultyNbMatch
-    ? parseInt(difficultyNbMatch[1])
-    : 3;
+  // Extract LENGTH_N
+  const lengthNMatch = content.match(/export const LENGTH_N = (\d+);/);
+  constants.LENGTH_N = lengthNMatch ? parseInt(lengthNMatch[1]) : 2;
 
   // Extract LEVELS_NB_TRAINING
   const trainingNbMatch = content.match(
@@ -83,10 +65,6 @@ function extractConstants() {
   constants.LEVELS_NB_TRAINING = trainingNbMatch
     ? parseInt(trainingNbMatch[1])
     : 3;
-
-  // Extract TARGET_KEY
-  const targetKeyMatch = content.match(/export const TARGET_KEY = "([^"]+)";/);
-  constants.TARGET_KEY = targetKeyMatch ? targetKeyMatch[1] : " ";
 
   // Extract arrays
   const descriptionMatch = content.match(
@@ -99,9 +77,8 @@ function extractConstants() {
       .filter((item) => item);
   } else {
     constants.DESCRIPTION = [
-      "1-back (Easy)",
-      "3-back (Medium)",
-      "3-back (Hard)",
+      "2-back (Medium) - Short",
+      "2-back (Medium) - Long",
     ];
   }
 
@@ -114,7 +91,7 @@ function extractConstants() {
       .map((item) => parseInt(item.trim()))
       .filter((item) => !isNaN(item));
   } else {
-    constants.STIMULUS_TIME = [1500, 1000, 800];
+    constants.STIMULUS_TIME = [1000, 1000];
   }
 
   const intertrialMatch = content.match(
@@ -126,7 +103,7 @@ function extractConstants() {
       .map((item) => parseInt(item.trim()))
       .filter((item) => !isNaN(item));
   } else {
-    constants.INTERTRIAL_INTERVAL = [2000, 2000, 1500];
+    constants.INTERTRIAL_INTERVAL = [1200, 1200];
   }
 
   const sequenceLengthMatch = content.match(
@@ -138,7 +115,7 @@ function extractConstants() {
       .map((item) => parseInt(item.trim()))
       .filter((item) => !isNaN(item));
   } else {
-    constants.SEQUENCE_LENGTH = [15, 15, 15];
+    constants.SEQUENCE_LENGTH = [15, 30];
   }
 
   const nMatch = content.match(/export const N = \[([\s\S]*?)\];/);
@@ -148,35 +125,19 @@ function extractConstants() {
       .map((item) => parseInt(item.trim()))
       .filter((item) => !isNaN(item));
   } else {
-    constants.N = [1, 3, 3];
+    constants.N = [2, 2];
   }
 
-  const stimulusSetMatch = content.match(
-    /export const STIMULUS_SET = \[([\s\S]*?)\];/
+  const matchResponseRateMatch = content.match(
+    /export const MATCH_RESPONSE_RATE = \[([\s\S]*?)\];/
   );
-  if (stimulusSetMatch) {
-    constants.STIMULUS_SET = stimulusSetMatch[1]
+  if (matchResponseRateMatch) {
+    constants.MATCH_RESPONSE_RATE = matchResponseRateMatch[1]
       .split(",")
-      .map((item) => item.trim().replace(/"/g, ""))
-      .filter((item) => item);
+      .map((item) => parseFloat(item.trim()))
+      .filter((item) => !isNaN(item));
   } else {
-    constants.STIMULUS_SET = [
-      "A",
-      "B",
-      "C",
-      "D",
-      "E",
-      "H",
-      "I",
-      "K",
-      "L",
-      "M",
-      "O",
-      "P",
-      "R",
-      "S",
-      "T",
-    ];
+    constants.MATCH_RESPONSE_RATE = [0.3, 0.3];
   }
 
   return constants;
@@ -188,85 +149,76 @@ function generateLevels() {
   const nbackLevels = [];
   let levelCounter = 1;
 
-  // Generate LEVELS_NB levels for each difficulty
-  for (
-    let difficultyIndex = 0;
-    difficultyIndex < constants.DIFFICULTY_NB;
-    difficultyIndex++
-  ) {
+  // Generate LEVELS_NB levels for each sequence length
+  for (let lengthIndex = 0; lengthIndex < constants.LENGTH_N; lengthIndex++) {
     for (let i = 0; i < constants.LEVELS_NB; i++) {
-      const N = constants.N[difficultyIndex];
-      const sequenceLength = constants.SEQUENCE_LENGTH[difficultyIndex];
+      const N = constants.N[lengthIndex]; // Should be 2 for both
+      const sequenceLength = constants.SEQUENCE_LENGTH[lengthIndex];
+      const matchResponseRate = constants.MATCH_RESPONSE_RATE[lengthIndex];
 
       // Generate deterministic seed for this level
       const seed = 1000 + levelCounter;
 
-      // Generate the sequence
-      const sequence = generateStimulusSequence(
+      // Generate the matches array
+      const matches = generateMatchesArray(
         sequenceLength,
-        constants.STIMULUS_SET,
         N,
+        matchResponseRate,
         seed
       );
 
-      // Create unique ID: N*sequenceLength*sequence
-      const uniqueId = `${N}*${sequenceLength}*${sequence.join("")}`;
+      // Create unique ID: N*sequenceLength*level
+      const uniqueId = `${N}*${sequenceLength}*${levelCounter}`;
 
       nbackLevels.push({
         level: levelCounter++,
         uniqueId: uniqueId,
         N: N,
-        stimulusTime: constants.STIMULUS_TIME[difficultyIndex],
-        intertrialInterval: constants.INTERTRIAL_INTERVAL[difficultyIndex],
+        stimulusTime: constants.STIMULUS_TIME[lengthIndex],
+        intertrialInterval: constants.INTERTRIAL_INTERVAL[lengthIndex],
         sequenceLength: sequenceLength,
-        description: constants.DESCRIPTION[difficultyIndex],
-        sequence: sequence,
+        description: constants.DESCRIPTION[lengthIndex],
+        matches: matches,
       });
     }
   }
 
-  // Generate training sequence - LEVELS_NB_TRAINING of "2-back (Medium)"
-  const mediumIndex = constants.DESCRIPTION.findIndex((desc) =>
-    desc.includes("Medium")
-  );
-
+  // Generate training sequence - use the first sequence length for training
   const trainingSequence = [];
   for (let i = 0; i < constants.LEVELS_NB_TRAINING; i++) {
-    const N = constants.N[mediumIndex];
-    const sequenceLength = constants.SEQUENCE_LENGTH[mediumIndex];
+    const N = constants.N[0]; // Use first N value (should be 2)
+    const sequenceLength = constants.SEQUENCE_LENGTH[0]; // Use first sequence length (should be 15)
+    const matchResponseRate = constants.MATCH_RESPONSE_RATE[0]; // Use first match response rate
 
     // Generate deterministic seed for training
     const seed = 2000 + i + 1;
 
-    // Generate the sequence
-    const sequence = generateStimulusSequence(
+    // Generate the matches array
+    const matches = generateMatchesArray(
       sequenceLength,
-      constants.STIMULUS_SET,
       N,
+      matchResponseRate,
       seed
     );
 
-    // Create unique ID: N*sequenceLength*sequence
-    const uniqueId = `${N}*${sequenceLength}*${sequence.join("")}`;
+    // Create unique ID: N*sequenceLength*training*level
+    const uniqueId = `${N}*${sequenceLength}*training*${i + 1}`;
 
     trainingSequence.push({
       level: i + 1,
       uniqueId: uniqueId,
       N: N,
-      stimulusTime: constants.STIMULUS_TIME[mediumIndex],
-      intertrialInterval: constants.INTERTRIAL_INTERVAL[mediumIndex],
+      stimulusTime: constants.STIMULUS_TIME[0],
+      intertrialInterval: constants.INTERTRIAL_INTERVAL[0],
       sequenceLength: sequenceLength,
-      description: constants.DESCRIPTION[mediumIndex],
-      sequence: sequence,
+      description: constants.DESCRIPTION[0],
+      matches: matches,
     });
   }
 
   return {
     nbackLevels,
     trainingSequence,
-    stimulusSet: constants.STIMULUS_SET,
-    maxTrials: 10,
-    targetKey: constants.TARGET_KEY,
   };
 }
 
@@ -281,8 +233,23 @@ function main() {
     console.log(`Successfully generated levels.json with:`);
     console.log(`- ${levelsConfig.nbackLevels.length} total levels`);
     console.log(`- ${levelsConfig.trainingSequence.length} training sequences`);
-    console.log(`- ${levelsConfig.stimulusSet.length} stimulus items`);
-    console.log(`- Each level includes predefined sequence and unique ID`);
+    console.log(`- Each level includes matches array and unique ID`);
+
+    // Show some sample match rates
+    const constants = extractConstants();
+    for (let i = 0; i < constants.LENGTH_N; i++) {
+      const expectedMatches = Math.ceil(
+        constants.SEQUENCE_LENGTH[i] * constants.MATCH_RESPONSE_RATE[i]
+      );
+      console.log(
+        `- Length ${
+          constants.SEQUENCE_LENGTH[i]
+        }: ${expectedMatches} matches (${(
+          constants.MATCH_RESPONSE_RATE[i] * 100
+        ).toFixed(1)}%)`
+      );
+    }
+
     console.log(`File saved to: ${outputPath}`);
   } catch (error) {
     console.error("Error writing levels.json:", error);

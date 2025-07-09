@@ -183,7 +183,7 @@ export const TrainingError = ({ errorType, onChoice }: TrainingErrorProps) => {
           `}
             variant="outline"
           >
-            Restart
+            Switch to Easier Sequence
           </Button>
           <Button
             className={`
@@ -198,7 +198,7 @@ export const TrainingError = ({ errorType, onChoice }: TrainingErrorProps) => {
           `}
             variant="outline"
           >
-            Continue
+            Restart from Checkpoint
           </Button>
         </div>
         <div

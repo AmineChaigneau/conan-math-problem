@@ -24,18 +24,18 @@ export default function Instructions() {
       ),
     },
     {
-      title: "Number Letter",
-      content: (
-        <div className="flex flex-col gap-8 text-justify">
-          <img src="/images/numberletter.png" alt="Numberletter" />
-        </div>
-      ),
-    },
-    {
       title: "How to Respond",
       content: (
         <div className="flex flex-col gap-8 text-justify">
           <img src="/images/howtorespond.png" alt="Howtorespond" />
+        </div>
+      ),
+    },
+    {
+      title: "Number Letter",
+      content: (
+        <div className="flex flex-col gap-8 text-justify">
+          <img src="/images/numberletter.png" alt="Numberletter" />
         </div>
       ),
     },
@@ -55,6 +55,46 @@ export default function Instructions() {
       ),
     },
     {
+      title: "Error Reward",
+      content: (
+        <div className="flex flex-col gap-8 text-justify">
+          <img src="/images/error_reward.png" alt="erro reward" />
+        </div>
+      ),
+    },
+    // {
+    //   title: "Error Reward Lost",
+    //   content: (
+    //     <div className="flex flex-col gap-8 text-justify">
+    //       <img src="/images/error_reward_lost.png" alt="erro reward lost" />
+    //     </div>
+    //   ),
+    // },
+    {
+      title: "Example Difficulty",
+      content: (
+        <div className="flex flex-col gap-8 text-justify">
+          <img src="/images/exampledifficulty.png" alt="Exampledifficulty" />
+        </div>
+      ),
+    },
+    {
+      title: "When to Restart",
+      content: (
+        <div className="flex flex-col gap-8 text-justify">
+          <img src="/images/when_restart.png" alt="When to Restart" />
+        </div>
+      ),
+    },
+    {
+      title: "Ghost When to Restart",
+      content: (
+        <div className="flex flex-col gap-8 text-justify">
+          <img src="/images/ghost_when_restart.png" alt="When to Restart" />
+        </div>
+      ),
+    },
+    {
       title: "Error",
       content: (
         <div className="flex flex-col gap-8 text-justify">
@@ -70,18 +110,18 @@ export default function Instructions() {
       ),
     },
     {
-      title: "Example Difficulty",
-      content: (
-        <div className="flex flex-col gap-8 text-justify">
-          <img src="/images/exampledifficulty.png" alt="Exampledifficulty" />
-        </div>
-      ),
-    },
-    {
       title: "Your Goal",
       content: (
         <div className="flex flex-col gap-8 text-justify">
           <img src="/images/yourgoal.png" alt="Yourgoal" />
+        </div>
+      ),
+    },
+    {
+      title: "Less Error",
+      content: (
+        <div className="flex flex-col gap-8 text-justify">
+          <img src="/images/lesserror.png" alt="Less Error" />
         </div>
       ),
     },

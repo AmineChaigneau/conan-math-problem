@@ -1,19 +1,33 @@
 "use client";
 
-import { GAMEMODE } from "@/constants/block";
-import { AttemptResults, ResponseData, TrainingLevel } from "@/types/nback";
+import { NbackDifficultyRestart } from "@/components/nback/difficulty_restart";
+import { Progress } from "@/components/ui/progress";
+import { GAMEMODE, LEVELS_NB_TRAINING } from "@/constants/block";
+import {
+  AttemptResults,
+  NbackDifficultyRestartData,
+  ResponseData,
+  TrainingLevel,
+} from "@/types/nback";
+import { generateSequenceFromMatches } from "@/utils/generateSequenceFromMatches";
 import { BadgeCheck, BadgeX } from "lucide-react";
-import { useState } from "react";
+import { Fira_Code } from "next/font/google";
+import { useMemo, useState } from "react";
 import { NbackComponent } from "../../src/components/nback/nbackcomponent";
-import { TrainingError } from "../../src/components/nback/training_error";
-import levelsConfig from "../../src/constants/levels.json";
+
+const firaCode = Fira_Code({
+  subsets: ["latin"],
+  display: "swap",
+});
 
 type TrainingTrialManagerProps = {
   trainingLevel: TrainingLevel;
   trialIndex: number;
   attemptNumber: number;
+  isUsingEasierSequence?: boolean;
   onTrialComplete: (wasSuccessful: boolean) => void;
   onRestartSameSequence?: () => void;
+  onSwitchToEasier?: () => void;
 };
 
 export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
@@ -21,8 +35,10 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     trainingLevel,
     trialIndex,
     attemptNumber,
+    isUsingEasierSequence = false,
     onTrialComplete,
     onRestartSameSequence,
+    onSwitchToEasier,
   } = props;
   const [showFeedback, setShowFeedback] = useState<"success" | "error" | null>(
     null
@@ -31,9 +47,19 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     errorType: "miss" | "falseAlarm";
     show: boolean;
   } | null>(null);
+  const [showAutoRestart, setShowAutoRestart] = useState(false);
   const [lastResults, setLastResults] = useState<AttemptResults | null>(null);
 
   console.log("Training level being used:", trainingLevel);
+
+  // Generate letter sequence based on matches array
+  const sequence = useMemo(() => {
+    return generateSequenceFromMatches(
+      trainingLevel.matches,
+      trainingLevel.N,
+      Date.now() + attemptNumber // Use attempt number as seed for variation
+    );
+  }, [trainingLevel.matches, trainingLevel.N, attemptNumber]);
 
   // Handle immediate error detection (restart mode only)
   const handleError = (errorData: {
@@ -42,26 +68,73 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     currentResponses: ResponseData[];
   }) => {
     if (GAMEMODE === "restart") {
-      setShowRestartError({
-        errorType: errorData.errorType,
-        show: true,
-      });
+      // Create a mock AttemptResults for the error display
+      const mockAttemptResults: AttemptResults = {
+        trialId: `training-trial-${trialIndex + 1}-attempt-${attemptNumber}`,
+        attemptIndex: attemptNumber,
+        responses: errorData.currentResponses,
+        startTime: Date.now() - 5000,
+        endTime: Date.now(),
+        stimuliSequence: sequence,
+        summary: {
+          totalStimuli: errorData.currentResponses.length,
+          totalMatches: 0,
+          correctHits: 0,
+          falseAlarms: errorData.errorType === "falseAlarm" ? 1 : 0,
+          misses: errorData.errorType === "miss" ? 1 : 0,
+          correctRejections: 0,
+          accuracy: 0,
+          meanReactionTime: null,
+          hitRate: 0,
+          falseAlarmRate: errorData.errorType === "falseAlarm" ? 1 : 0,
+        },
+      };
+
+      setLastResults(mockAttemptResults);
+
+      // If already in easier sequence, show auto-restart screen
+      if (isUsingEasierSequence) {
+        setShowAutoRestart(true);
+        // Auto-restart after showing FAIL message
+        setTimeout(() => {
+          setShowAutoRestart(false);
+          if (onRestartSameSequence) {
+            onRestartSameSequence();
+          }
+        }, 1500);
+      } else {
+        setShowRestartError({
+          errorType: errorData.errorType,
+          show: true,
+        });
+      }
     }
   };
 
-  // Handle choice in restart mode (restart vs continue)
-  const handleRestartChoice = (restart: boolean) => {
+  // Handle choice in restart mode (switchToEasier vs restart from checkpoint)
+  const handleRestartChoice = (switchToEasier: boolean) => {
     setShowRestartError(null);
 
-    if (restart) {
-      // Restart the same sequence
+    if (switchToEasier) {
+      // Switch to easier (N-1 back) - call the new callback
+      if (onSwitchToEasier) {
+        onSwitchToEasier();
+      } else {
+        // Fallback to completing as failed if no easier option
+        onTrialComplete(false);
+      }
+    } else {
+      // Restart from beginning
       if (onRestartSameSequence) {
         onRestartSameSequence();
       }
-    } else {
-      // Continue to next sequence - mark as failed
-      onTrialComplete(false);
     }
+  };
+
+  // No-op data collection function for training (we don't want to save data)
+  const handleDataCollection = (data: NbackDifficultyRestartData) => {
+    // Do nothing - we don't save data in training mode
+    console.log("Training mode: data collection skipped", data);
   };
 
   const handleAttemptEnd = (results: AttemptResults) => {
@@ -98,61 +171,109 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     }, 2000);
   };
 
-  // Show restart error screen (restart mode only)
-  if (showRestartError?.show) {
+  // Show auto-restart screen (when already in easier sequence)
+  if (showAutoRestart) {
     return (
-      <div className="w-full h-screen">
-        <TrainingError
-          errorType={showRestartError.errorType}
+      <div
+        className={`flex flex-col items-center justify-center h-screen ${firaCode.className}`}
+      >
+        <div className="text-center space-y-8">
+          <div className="text-6xl font-bold text-red-600 mb-4">FAIL</div>
+          <div className="text-2xl text-gray-700">
+            Sequence Failed - Restarting Same Sequence
+          </div>
+          <div className="text-lg text-gray-500">
+            Already at easiest level ({trainingLevel.N}-back)
+          </div>
+          <div className="text-sm text-gray-400 mt-8">
+            Automatically restarting in 1.5 seconds...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show restart error screen (when not in easier sequence)
+  if (showRestartError && lastResults && showRestartError.show) {
+    return (
+      <div className="h-screen w-full bg-white">
+        <NbackDifficultyRestart
+          trialId={trialIndex + 1}
+          trialResults={{
+            stimuliSequence: lastResults.stimuliSequence,
+            totalAttempts: 1,
+            overallAccuracy: lastResults.summary.accuracy,
+            attempts: [
+              {
+                attemptIndex: lastResults.attemptIndex,
+                responses: lastResults.responses,
+                startTime: lastResults.startTime,
+                endTime: lastResults.endTime,
+                isEasierSequence: isUsingEasierSequence,
+              },
+            ],
+            summary: lastResults.summary,
+          }}
+          currentLevel={trainingLevel.N}
+          remainingTrials={LEVELS_NB_TRAINING - trialIndex}
           onChoice={handleRestartChoice}
+          onDataCollection={handleDataCollection}
         />
       </div>
     );
   }
 
-  // Show percent mode feedback (original behavior)
+  // Show feedback screen (percent mode)
   if (showFeedback && lastResults) {
-    const accuracy = (lastResults.summary.accuracy * 100).toFixed(1);
-
     return (
-      <>
-        <div className="h-full w-full"></div>
-        <div className="fixed flex items-center justify-center">
+      <div className="h-full w-full flex items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-8">
           <div className="flex flex-col items-center gap-4">
             {showFeedback === "success" ? (
-              <BadgeCheck className="w-24 h-24 text-green-500 animate-in fade-in" />
+              <BadgeCheck className="w-32 h-32 text-green-500 animate-in fade-in" />
             ) : (
-              <BadgeX className="w-24 h-24 text-red-500 animate-in fade-in" />
+              <BadgeX className="w-32 h-32 text-red-500 animate-in fade-in" />
             )}
             <div className="text-center">
-              <div className="text-2xl font-bold">{accuracy}% Accuracy</div>
-              <div className="text-s mt-4 text-gray-600">
-                Hits: {lastResults.summary.correctHits} | False Alarms:{" "}
-                {lastResults.summary.falseAlarms}
+              <div className="text-3xl font-bold">
+                {(lastResults.summary.accuracy * 100).toFixed(1)}% Accuracy
               </div>
-              {lastResults.summary.meanReactionTime && (
-                <div className="text-sm mt-2 text-gray-600">
-                  Avg RT: {lastResults.summary.meanReactionTime.toFixed(0)}ms
-                </div>
-              )}
+              <div className="text-lg mt-2 text-gray-600">
+                {showFeedback === "success"
+                  ? "Good performance!"
+                  : "Keep trying!"}
+              </div>
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
+  // Main trial component
   return (
-    <div className="w-full h-screen">
+    <div className="relative h-full w-full flex items-center justify-center bg-white">
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 h-[75px] w-3/4 flex flex-col items-center justify-center gap-2">
+        <Progress
+          value={((trialIndex + 1) / LEVELS_NB_TRAINING) * 100}
+          className="shadow-2xl"
+        />
+        <div
+          className={`text-sm text-zinc-400 ${firaCode.className} text-center`}
+        >
+          {trialIndex + 1} / {LEVELS_NB_TRAINING} sequences completed
+        </div>
+      </div>
+
       <NbackComponent
-        trialId={`training-trial-${trialIndex + 1}`}
+        trialId={`training-trial-${trialIndex + 1}-attempt-${attemptNumber}`}
         attemptIndex={attemptNumber}
         N={trainingLevel.N}
-        stimulusset={levelsConfig.stimulusSet}
         stimulusTime={trainingLevel.stimulusTime}
         intertrialInterval={trainingLevel.intertrialInterval}
         sequenceLength={trainingLevel.sequenceLength}
-        targetKey={levelsConfig.targetKey}
+        targetKey={"click"}
+        predefinedSequence={sequence}
         onTrialEnd={handleAttemptEnd}
         onError={handleError}
       />

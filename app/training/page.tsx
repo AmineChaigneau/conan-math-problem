@@ -1,9 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { GAMEMODE, LEVELS_NB_TRAINING } from "@/constants/block";
-import levelsConfig from "@/constants/levels.json";
+import levelsData from "@/constants/levels.json";
 import { BadgeCheck, BadgeX } from "lucide-react";
 import { Fira_Code } from "next/font/google";
 import Link from "next/link";
@@ -19,6 +18,7 @@ interface TrainingAttempt {
   sequenceIndex: number;
   attempts: number;
   completed: boolean;
+  wasEasierSequence?: boolean;
 }
 
 export default function Training() {
@@ -31,6 +31,9 @@ export default function Training() {
   );
   const [currentAttempts, setCurrentAttempts] = useState(1);
 
+  // State for easier sequence tracking
+  const [isUsingEasierSequence, setIsUsingEasierSequence] = useState(false);
+
   // State for percent mode
   const [completedTrials, setCompletedTrials] = useState<boolean[]>([]);
   const [showFeedback, setShowFeedback] = useState<"success" | "error" | null>(
@@ -38,7 +41,25 @@ export default function Training() {
   );
   const [lastAccuracy, setLastAccuracy] = useState<number>(0);
 
-  const currentLevel = levelsConfig.trainingSequence[currentTrialIndex];
+  // Get current training level from levels.json
+  const getCurrentLevel = () => {
+    const originalLevel = levelsData.trainingSequence[currentTrialIndex];
+
+    if (isUsingEasierSequence && originalLevel.N > 1) {
+      // Create an easier version (N-1) of the current level
+      return {
+        ...originalLevel,
+        N: originalLevel.N - 1,
+        // Optionally adjust other parameters for easier difficulty
+        stimulusTime: Math.max(originalLevel.stimulusTime, 1500),
+        intertrialInterval: Math.max(originalLevel.intertrialInterval, 1500),
+      };
+    }
+
+    return originalLevel;
+  };
+
+  const currentLevel = getCurrentLevel();
 
   const handleTrialComplete = (wasSuccessful: boolean) => {
     if (GAMEMODE === "restart") {
@@ -49,16 +70,18 @@ export default function Training() {
           sequenceIndex: currentTrialIndex,
           attempts: currentAttempts,
           completed: wasSuccessful,
+          wasEasierSequence: isUsingEasierSequence,
         },
       ]);
-      setCurrentAttempts(1); // Reset attempts for next sequence
+      setCurrentAttempts(1);
+      setIsUsingEasierSequence(false);
       setCurrentTrialIndex((prev) => prev + 1);
       return;
     }
 
     // Percent mode - show feedback and track completion
     setCompletedTrials((prev) => [...prev, wasSuccessful]);
-    setLastAccuracy(wasSuccessful ? 75 : 45); // Approximate accuracy for display
+    setLastAccuracy(wasSuccessful ? 75 : 45);
     setShowFeedback(wasSuccessful ? "success" : "error");
 
     // Show feedback for 2 seconds before moving to next trial
@@ -70,6 +93,19 @@ export default function Training() {
 
   const handleRestartSameSequence = () => {
     setCurrentAttempts((prev) => prev + 1);
+  };
+
+  const handleSwitchToEasier = () => {
+    const originalLevel = levelsData.trainingSequence[currentTrialIndex];
+
+    if (originalLevel.N > 1) {
+      // Switch to easier (N-1) sequence
+      setIsUsingEasierSequence(true);
+      setCurrentAttempts((prev) => prev + 1);
+    } else {
+      // Already at easiest level (1-back), treat as trial completion failure
+      handleTrialComplete(false);
+    }
   };
 
   const isTrainingComplete = currentTrialIndex >= LEVELS_NB_TRAINING;
@@ -136,6 +172,11 @@ export default function Training() {
                       {attempt.attempts} attempt
                       {attempt.attempts > 1 ? "s" : ""} -{" "}
                       {attempt.completed ? "Completed" : "Failed"}
+                      {attempt.wasEasierSequence && (
+                        <span className="text-xs text-blue-600 ml-1">
+                          (Easier)
+                        </span>
+                      )}
                     </span>
                   </div>
                 ))}
@@ -225,18 +266,8 @@ export default function Training() {
         <h2
           className={`text-lg font-bold text-center ${firaCode.className} text-zinc-600`}
         >
-          Current Level
+          Training Level
         </h2>
-        <div
-          className={`flex items-center justify-center px-4 py-2 bg-orange-500 rounded-lg shadow-lg ${firaCode.className} text-white text-center min-w-[120px]`}
-        >
-          {currentLevel.description}
-        </div>
-        {GAMEMODE === "restart" && (
-          <div className="text-center mt-2 text-sm text-gray-600">
-            Attempt: {currentAttempts}
-          </div>
-        )}
       </div>
 
       {!isLoaded && (
@@ -246,22 +277,17 @@ export default function Training() {
       )}
 
       <div className="flex flex-col items-center justify-center h-full w-full">
-        <div className="fixed top-0 left-1/2 -translate-x-1/2 h-[150px] w-3/4 flex flex-col items-center justify-center gap-2">
-          <Progress
-            value={(currentTrialIndex / LEVELS_NB_TRAINING) * 100}
-            className="shadow-2xl"
-          />
-          <div
-            className={`text-sm text-zinc-400 ${firaCode.className} text-center`}
-          >
-            {currentTrialIndex} / {LEVELS_NB_TRAINING}{" "}
-            <i className="text-xs">(Training sequences completed)</i>
-          </div>
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2">
           {/* Instructions for current trial */}
           <div className="mb-4 text-center max-w-md">
             <p className="text-sm text-gray-600">
-              Press <strong>SPACEBAR</strong> when the current letter matches
-              the one from <strong>{currentLevel.N}</strong> trials ago
+              Click on the <strong>GRAY AREA</strong> when the current letter
+              matches the one from <strong>{currentLevel.N}</strong> letters ago
+              {isUsingEasierSequence && (
+                <span className="block text-xs text-blue-600 mt-1">
+                  (Easier sequence - N-1 back)
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -270,8 +296,10 @@ export default function Training() {
           trainingLevel={currentLevel}
           trialIndex={currentTrialIndex}
           attemptNumber={currentAttempts}
+          isUsingEasierSequence={isUsingEasierSequence}
           onTrialComplete={handleTrialComplete}
           onRestartSameSequence={handleRestartSameSequence}
+          onSwitchToEasier={handleSwitchToEasier}
         />
       </div>
     </div>

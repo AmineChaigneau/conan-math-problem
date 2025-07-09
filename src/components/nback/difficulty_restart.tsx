@@ -221,7 +221,7 @@ export const NbackDifficultyRestart = ({
           `}
             variant="outline"
           >
-            Restart from Save
+            Restart from Checkpoint
           </Button>
         </div>
         <div
@@ -240,19 +240,9 @@ export const NbackDifficultyRestart = ({
           <div className="flex flex-col items-center gap-1 text-sm text-gray-600">
             <div>Current Level: {currentLevel}-back</div>
             <div>Trials remaining: {remainingTrials}</div>
-            {/* <div>
-              Hits: {trialResults.summary.correctHits} | False Alarms:{" "}
-              {trialResults.summary.falseAlarms}
-            </div>
-            {trialResults.summary.meanReactionTime && (
-              <div>
-                Avg RT: {trialResults.summary.meanReactionTime.toFixed(0)}ms
-              </div>
-            )} */}
           </div>
-
-          <h3 className="text-lg mt-4 max-w-md">
-            Would you like to restart the same sequence <br />
+          <h3 className="text-lg mt-4 max-w-md text-center">
+            Would you like to restart from the last checkpoint <br />
             or switch to an easier level?
           </h3>
         </div>

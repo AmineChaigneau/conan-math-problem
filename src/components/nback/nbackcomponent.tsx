@@ -3,46 +3,55 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { Progress } from "@/components/ui/progress";
-import { IS_CHECKPOINT } from "@/constants/block";
+import { GAP_BETWEEN_CHECKPOINT, N_EASIER } from "@/constants/block";
 import { AttemptResults, ResponseData, TrialSummary } from "@/types/nback";
+import { generateSequenceFromMatches } from "@/utils/generateSequenceFromMatches";
 import { Fira_Code } from "next/font/google";
+import { GetReady } from "./getReady";
 
 const firaCode = Fira_Code({
   subsets: ["latin"],
   display: "swap",
 });
 
+// Local constant to avoid linting issues
+const GAP_CHECKPOINT = GAP_BETWEEN_CHECKPOINT;
+
 interface NbackComponentProps {
   trialId: string | number;
-  attemptIndex?: number; // Add attempt index
+  attemptIndex?: number;
   N: number;
-  stimulusset: string[];
-  stimulusTime: number; // 500-1500ms
-  intertrialInterval: number; // 2000ms typically
-  sequenceLength?: number; // Default to 20 if not provided
-  targetKey?: string; // Default to spacebar
-  predefinedSequence?: string[]; // Use predefined sequence from levels.json
-  restartFromIndex?: number; // Index to restart from (for checkpoint mode)
+  stimulusTime: number;
+  intertrialInterval: number;
+  sequenceLength?: number;
+  targetKey?: string;
+  predefinedSequence?: string[];
+  matches?: number[]; // Array of 0s and 1s indicating where matches should occur
+  currentTrialIndex?: number; // For logging purposes
+  startFromIndex?: number; // Index to start from (for checkpoint restart)
+  ghostLetters?: string[]; // Ghost context letters for checkpoint restart
   onTrialEnd: (results: AttemptResults) => void;
   onError?: (errorData: {
     stimulusIndex: number;
     errorType: "miss" | "falseAlarm";
     currentResponses: ResponseData[];
-    checkpointIndex: number; // Add checkpoint index to error data
+    lastCheckpoint: number; // Add checkpoint info
   }) => void;
 }
 
 export const NbackComponent: React.FC<NbackComponentProps> = ({
   trialId,
   attemptIndex = 1,
-  N,
-  stimulusset,
+  N = 2,
   stimulusTime,
   intertrialInterval,
   sequenceLength = 20,
-  targetKey = " ", // spacebar
+  targetKey = " ",
   predefinedSequence,
-  restartFromIndex = 0, // Default to start from beginning
+  matches,
+  currentTrialIndex,
+  startFromIndex = 0, // Default to start from beginning
+  ghostLetters,
   onTrialEnd,
   onError,
 }) => {
@@ -54,154 +63,143 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     null
   );
   const [trialPhase, setTrialPhase] = useState<
-    "preparing" | "showing" | "interval" | "completed"
+    "preparing" | "ghost" | "showing" | "interval" | "completed"
   >("preparing");
-  const [overallProgress, setOverallProgress] = useState(0);
+  const [lettersShown, setLettersShown] = useState(0);
+  const [feedbackColor, setFeedbackColor] = useState<string>("#000");
+  const [currentGhostIndex, setCurrentGhostIndex] = useState(-1);
+  const [validatedCheckpoints, setValidatedCheckpoints] = useState<Set<number>>(
+    new Set()
+  );
 
-  // Add attempt timing
   const attemptStartTimeRef = useRef<number>(0);
-
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const stimuliRef = useRef<string[]>([]);
   const responsesRef = useRef<ResponseData[]>([]);
+  const ghostLettersRef = useRef<string[]>([]);
 
-  // Add checkpoint tracking
-  const lastCheckpointRef = useRef<number>(0);
+  // Helper function to calculate the last checkpoint index
+  const getLastCheckpoint = (errorIndex: number): number => {
+    if (errorIndex < GAP_CHECKPOINT) return 0;
+    return Math.floor(errorIndex / GAP_CHECKPOINT) * GAP_CHECKPOINT;
+  };
 
-  // Simple seeded random number generator (LCG)
-  const seededRandom = useCallback((seed: number) => {
-    let state = seed;
-    return () => {
-      state = (state * 1664525 + 1013904223) % 4294967296;
-      return state / 4294967296;
-    };
-  }, []);
+  // Function to start ghost letter sequence
+  const startGhostSequence = useCallback(() => {
+    if (ghostLettersRef.current.length === 0) {
+      startNextStimulus(startFromIndex);
+      return;
+    }
 
-  // Generate stimulus sequence with controlled number of matches
-  const generateStimulusSequence = useCallback(
-    (
-      length: number,
-      stimulusSet: string[],
-      nBack: number,
-      sequenceSeed?: number
-    ): string[] => {
-      const rng = sequenceSeed ? seededRandom(sequenceSeed) : Math.random;
-      const sequence: string[] = [];
-      const targetMatchRate = 0.3; // Aim for ~30% matches
-      const numMatches = Math.floor(length * targetMatchRate);
+    setCurrentGhostIndex(0);
+    setTrialPhase("ghost");
+    console.log(
+      "Starting ghost sequence with letters:",
+      ghostLettersRef.current
+    );
 
-      // Fill initial N positions randomly
-      for (let i = 0; i < Math.min(nBack, length); i++) {
-        sequence.push(stimulusSet[Math.floor(rng() * stimulusSet.length)]);
+    // Show first ghost letter
+    showGhostLetter(0);
+  }, [startFromIndex]);
+
+  // Function to show individual ghost letters
+  const showGhostLetter = useCallback(
+    (ghostIndex: number) => {
+      if (ghostIndex >= ghostLettersRef.current.length) {
+        // Ghost sequence completed, start main sequence
+        setCurrentGhostIndex(-1);
+        setTrialPhase("interval");
+        timeoutRef.current = setTimeout(() => {
+          startNextStimulus(startFromIndex);
+        }, intertrialInterval);
+        return;
       }
 
-      // Create matches at specific positions
-      const matchPositions = new Set<number>();
-      let attemptsLeft = 100; // Prevent infinite loop
-      while (matchPositions.size < numMatches && attemptsLeft > 0) {
-        const pos = nBack + Math.floor(rng() * (length - nBack));
-        if (!matchPositions.has(pos)) {
-          matchPositions.add(pos);
-        }
-        attemptsLeft--;
-      }
+      setCurrentGhostIndex(ghostIndex);
+      setTrialPhase("ghost");
 
-      // Fill remaining positions
-      for (let i = nBack; i < length; i++) {
-        if (matchPositions.has(i)) {
-          // This should be a match
-          sequence.push(sequence[i - nBack]);
-        } else {
-          // This should not be a match
-          let stimulus;
-          let attempts = 0;
-          do {
-            stimulus = stimulusSet[Math.floor(rng() * stimulusSet.length)];
-            attempts++;
-          } while (stimulus === sequence[i - nBack] && attempts < 10);
-          sequence.push(stimulus);
-        }
-      }
+      // Show ghost letter for stimulusTime
+      timeoutRef.current = setTimeout(() => {
+        setTrialPhase("interval");
 
-      return sequence;
+        // Move to next ghost letter with same timing as normal sequence
+        timeoutRef.current = setTimeout(() => {
+          showGhostLetter(ghostIndex + 1);
+        }, intertrialInterval);
+      }, stimulusTime);
     },
-    [seededRandom]
-  );
-
-  // Function to determine checkpoint index based on error type and position
-  const determineCheckpointIndex = useCallback(
-    (errorIndex: number, errorType: "miss" | "falseAlarm"): number => {
-      if (!IS_CHECKPOINT) {
-        return 0; // Always restart from beginning if checkpoint mode is disabled
-      }
-
-      const responses = responsesRef.current;
-
-      if (errorType === "falseAlarm") {
-        // For false alarm: checkpoint is the last correct answer within the sequence
-        for (let i = errorIndex - 1; i >= 0; i--) {
-          const response = responses[i];
-          const isCorrect =
-            (response.isMatchExpected && response.userResponded) ||
-            (!response.isMatchExpected && !response.userResponded);
-
-          if (isCorrect) {
-            return i + 1; // Return index after the last correct response
-          }
-        }
-        return 0; // If no correct response found, restart from beginning
-      } else if (errorType === "miss") {
-        // For miss: checkpoint is the last correct answer before the first letter of the N-task
-        // The "first letter of the N-task" means before the first position where N-back logic applies
-        const nTaskStartIndex = Math.max(0, errorIndex - N);
-
-        for (let i = nTaskStartIndex - 1; i >= 0; i--) {
-          const response = responses[i];
-          const isCorrect =
-            (response.isMatchExpected && response.userResponded) ||
-            (!response.isMatchExpected && !response.userResponded);
-
-          if (isCorrect) {
-            return i + 1; // Return index after the last correct response
-          }
-        }
-        return Math.max(0, nTaskStartIndex); // Restart from N-task start position
-      }
-
-      return 0; // Default to beginning
-    },
-    [N]
+    [stimulusTime, intertrialInterval, startFromIndex]
   );
 
   // Initialize trial
   useEffect(() => {
     let sequence: string[];
+    let actualMatches: number[];
 
-    if (predefinedSequence && predefinedSequence.length > 0) {
-      // Use predefined sequence from levels.json (for medium, hard, and easy difficulties)
+    if (predefinedSequence) {
+      // Use predefined sequence and calculate matches from it
       sequence = predefinedSequence;
+
+      // Calculate matches for predefined sequence
+      actualMatches = new Array(sequence.length).fill(0);
+      const actualN = N === 1 ? N_EASIER : N;
+      for (let i = actualN; i < sequence.length; i++) {
+        if (sequence[i] === sequence[i - actualN]) {
+          actualMatches[i] = 1;
+        }
+      }
+    } else if (matches) {
+      // Use provided matches array to generate sequence
+      const actualN = N === 1 ? N_EASIER : N; // Use N_EASIER for easier sequences
+      const seed = Date.now() + attemptIndex;
+      sequence = generateSequenceFromMatches(matches, actualN, seed);
+      console.log("Sequence:", sequence);
+      actualMatches = matches;
     } else {
-      // Fallback to generated sequence (should rarely be used now)
-      sequence = generateStimulusSequence(sequenceLength, stimulusset, N);
+      // Fallback: generate a basic sequence (shouldn't happen in normal usage)
+      console.warn("No matches array or predefined sequence provided");
+      sequence = new Array(sequenceLength).fill("A");
+      actualMatches = new Array(sequenceLength).fill(0);
     }
+
+    // Log the generated sequence and matches
+    console.log(
+      `Trial ${currentTrialIndex || "unknown"} - Generated sequence:`,
+      sequence
+    );
+    console.log(
+      `Trial ${currentTrialIndex || "unknown"} - Matches:`,
+      actualMatches
+    );
+    console.log(
+      `Trial ${currentTrialIndex || "unknown"} - N-back level:`,
+      N === 1 ? N_EASIER : N
+    );
+    console.log(
+      `Trial ${currentTrialIndex || "unknown"} - Starting from index:`,
+      startFromIndex
+    );
 
     setStimuliSequence(sequence);
     stimuliRef.current = sequence;
 
-    // Initialize responses array - but when restarting from checkpoint,
-    // we need to handle the N-back logic correctly
+    // Set ghost letters if provided
+    if (ghostLetters && ghostLetters.length > 0) {
+      ghostLettersRef.current = ghostLetters;
+      console.log(
+        `Trial ${currentTrialIndex || "unknown"} - Ghost letters:`,
+        ghostLetters
+      );
+    } else {
+      ghostLettersRef.current = [];
+    }
+
+    // Initialize responses array
     const initialResponses: ResponseData[] = sequence.map((stimulus, index) => {
-      // When restarting from a checkpoint, we need to ensure N-back logic
-      // doesn't depend on letters before the restart point
       let isMatchExpected = false;
 
-      if (index >= N) {
-        const lookBackIndex = index - N;
-        // Only consider it a match if the lookback index is >= restartFromIndex
-        // This ensures responses don't depend on previous letters before checkpoint
-        if (lookBackIndex >= restartFromIndex) {
-          isMatchExpected = stimulus === sequence[lookBackIndex];
-        }
+      if (index >= 0 && actualMatches[index] === 1) {
+        isMatchExpected = true;
       }
 
       return {
@@ -217,18 +215,31 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     responsesRef.current = initialResponses;
     setIsTrialActive(true);
 
-    // Set initial progress based on restart index
-    setOverallProgress(restartFromIndex);
+    // Initialize letters shown counter from start index
+    setLettersShown(startFromIndex);
 
-    // Update checkpoint reference
-    lastCheckpointRef.current = restartFromIndex;
+    // Initialize validated checkpoints - mark as validated if starting from a checkpoint
+    const initialValidatedCheckpoints = new Set<number>();
+    if (startFromIndex > 0) {
+      // Mark all checkpoints before startFromIndex as validated
+      for (let i = 1; i <= Math.floor(startFromIndex / GAP_CHECKPOINT); i++) {
+        initialValidatedCheckpoints.add(i);
+      }
+    }
+    setValidatedCheckpoints(initialValidatedCheckpoints);
 
     // Set attempt start time
     attemptStartTimeRef.current = Date.now();
 
-    // Start the trial after a brief delay
+    // Start the trial - either with ghost letters or directly to the sequence
     timeoutRef.current = setTimeout(() => {
-      startNextStimulus(restartFromIndex);
+      if (ghostLettersRef.current.length > 0) {
+        // Start with ghost letters
+        startGhostSequence();
+      } else {
+        // Start directly with the main sequence
+        startNextStimulus(startFromIndex);
+      }
     }, 1000);
 
     return () => {
@@ -240,30 +251,42 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     trialId,
     attemptIndex,
     N,
-    stimulusset,
     stimulusTime,
     intertrialInterval,
     sequenceLength,
     predefinedSequence,
-    restartFromIndex, // Add restartFromIndex as dependency
-    generateStimulusSequence,
+    matches,
+    currentTrialIndex,
+    startFromIndex, // Add to dependencies
+    ghostLetters, // Add to dependencies
   ]);
 
   const startNextStimulus = useCallback(
-    (index: number) => {
-      if (index >= stimuliRef.current.length) {
+    (stimulusIndex: number) => {
+      if (stimulusIndex >= stimuliRef.current.length) {
         // Trial completed
         setTrialPhase("completed");
         setIsTrialActive(false);
-        setOverallProgress(stimuliRef.current.length); // Set to max for completed
         calculateAndSendResults();
         return;
       }
 
-      setCurrentStimulusIndex(index);
+      setCurrentStimulusIndex(stimulusIndex);
       setTrialPhase("showing");
       setStimulusStartTime(Date.now());
-      setOverallProgress(index + 1); // Update progress when showing stimulus
+
+      // Update progress
+      setLettersShown((prev) => prev + 1);
+
+      // Check if we've reached a new checkpoint
+      if (stimulusIndex > 0 && stimulusIndex % GAP_CHECKPOINT === 0) {
+        const checkpointNumber = Math.floor(stimulusIndex / GAP_CHECKPOINT);
+        setValidatedCheckpoints(
+          (prev) => new Set([...Array.from(prev), checkpointNumber])
+        );
+      }
+
+      setFeedbackColor("#000");
 
       // Hide stimulus after stimulusTime
       timeoutRef.current = setTimeout(() => {
@@ -271,71 +294,56 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
         setCurrentStimulusIndex(-1);
         setStimulusStartTime(null);
 
-        // Check for errors on this stimulus (miss or false alarm)
-        if (onError && index >= 0) {
-          const currentResponse = responsesRef.current[index];
+        // Check for errors on this stimulus
+        if (onError) {
+          const currentResponse = responsesRef.current[stimulusIndex];
           if (currentResponse) {
-            // Check for miss (expected response but didn't respond)
+            // Check for miss
             if (
               currentResponse.isMatchExpected &&
               !currentResponse.userResponded
             ) {
-              const checkpointIndex = determineCheckpointIndex(index, "miss");
+              setFeedbackColor("#ef4444");
+              const lastCheckpoint = getLastCheckpoint(stimulusIndex);
               onError({
-                stimulusIndex: index,
+                stimulusIndex,
                 errorType: "miss",
                 currentResponses: [...responsesRef.current],
-                checkpointIndex,
+                lastCheckpoint,
               });
-              return; // Stop the sequence
+              return;
             }
-            // Check for false alarm (unexpected response but did respond)
+            // Check for false alarm
             if (
               !currentResponse.isMatchExpected &&
               currentResponse.userResponded
             ) {
-              const checkpointIndex = determineCheckpointIndex(
-                index,
-                "falseAlarm"
-              );
+              setFeedbackColor("#ef4444");
+              const lastCheckpoint = getLastCheckpoint(stimulusIndex);
               onError({
-                stimulusIndex: index,
+                stimulusIndex,
                 errorType: "falseAlarm",
                 currentResponses: [...responsesRef.current],
-                checkpointIndex,
+                lastCheckpoint,
               });
-              return; // Stop the sequence
-            }
-          }
-        }
-
-        // Update checkpoint if this was a correct response
-        if (index >= 0) {
-          const currentResponse = responsesRef.current[index];
-          if (currentResponse) {
-            const isCorrect =
-              (currentResponse.isMatchExpected &&
-                currentResponse.userResponded) ||
-              (!currentResponse.isMatchExpected &&
-                !currentResponse.userResponded);
-
-            if (isCorrect) {
-              lastCheckpointRef.current = index + 1;
+              return;
             }
           }
         }
 
         // Start next stimulus after inter-trial interval
         timeoutRef.current = setTimeout(() => {
-          startNextStimulus(index + 1);
+          startNextStimulus(stimulusIndex + 1);
         }, intertrialInterval);
       }, stimulusTime);
     },
-    [stimulusTime, intertrialInterval, onError, determineCheckpointIndex]
+    [stimulusTime, intertrialInterval, onError]
   );
 
   const handleKeyPress = useCallback(
     (event: KeyboardEvent) => {
+      if (targetKey !== " ") return;
+
       if (!isTrialActive || currentStimulusIndex === -1 || !stimulusStartTime)
         return;
 
@@ -356,10 +364,48 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
 
         setResponses(updatedResponses);
         responsesRef.current = updatedResponses;
+
+        // Set feedback color based on correctness
+        const currentResponse = updatedResponses[currentStimulusIndex];
+        if (currentResponse.isMatchExpected) {
+          setFeedbackColor("#22c55e");
+        } else {
+          setFeedbackColor("#ef4444");
+        }
       }
     },
     [isTrialActive, currentStimulusIndex, stimulusStartTime, targetKey]
   );
+
+  const handleClick = useCallback(() => {
+    if (targetKey !== "click") return;
+
+    if (!isTrialActive || currentStimulusIndex === -1 || !stimulusStartTime)
+      return;
+
+    const reactionTime = Date.now() - stimulusStartTime;
+    const responseTime = Date.now();
+
+    // Update the response for current stimulus
+    const updatedResponses = [...responsesRef.current];
+    updatedResponses[currentStimulusIndex] = {
+      ...updatedResponses[currentStimulusIndex],
+      userResponded: true,
+      reactionTime,
+      responseTime,
+    };
+
+    setResponses(updatedResponses);
+    responsesRef.current = updatedResponses;
+
+    // Set feedback color based on correctness
+    const currentResponse = updatedResponses[currentStimulusIndex];
+    if (currentResponse.isMatchExpected) {
+      setFeedbackColor("#22c55e");
+    } else {
+      setFeedbackColor("#ef4444");
+    }
+  }, [isTrialActive, currentStimulusIndex, stimulusStartTime, targetKey]);
 
   const calculateAndSendResults = useCallback(() => {
     const finalResponses = responsesRef.current;
@@ -455,27 +501,45 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
 
   const getCurrentStimulus = () => {
     if (
-      currentStimulusIndex >= 0 &&
-      currentStimulusIndex < stimuliSequence.length
+      currentStimulusIndex < 0 ||
+      currentStimulusIndex >= stimuliRef.current.length
     ) {
-      return stimuliSequence[currentStimulusIndex];
+      return "";
     }
-    return "";
+    return stimuliRef.current[currentStimulusIndex];
   };
 
   const getPhaseDisplay = () => {
     switch (trialPhase) {
       case "preparing":
-        return `Get ready for ${N}-back task...`;
+        return <GetReady N={N} />;
+      case "ghost":
+        if (
+          currentGhostIndex >= 0 &&
+          currentGhostIndex < ghostLettersRef.current.length
+        ) {
+          return ghostLettersRef.current[currentGhostIndex];
+        }
+        return "";
       case "showing":
         return getCurrentStimulus();
       case "interval":
-        return "+"; // Fixation cross during interval
+        return "+";
       case "completed":
         return "Trial completed!";
       default:
         return "";
     }
+  };
+
+  const getStimulusColor = () => {
+    if (trialPhase === "ghost") {
+      return "#999"; // Gray for ghost letters
+    }
+    if (trialPhase === "showing") {
+      return feedbackColor;
+    }
+    return "#666";
   };
 
   return (
@@ -488,9 +552,15 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: trialPhase === "showing" ? "72px" : "24px",
-          fontWeight: trialPhase === "showing" ? "bold" : "normal",
-          color: trialPhase === "showing" ? "#000" : "#666",
+          fontSize:
+            trialPhase === "showing" || trialPhase === "ghost"
+              ? "72px"
+              : "24px",
+          fontWeight:
+            trialPhase === "showing" || trialPhase === "ghost"
+              ? "bold"
+              : "normal",
+          color: getStimulusColor(),
         }}
       >
         {getPhaseDisplay()}
@@ -500,18 +570,55 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
         <div
           style={{
             position: "absolute",
-            bottom: "50px",
+            top: "100px",
             left: "50%",
             transform: "translateX(-50%)",
             width: "300px",
           }}
+          className="flex flex-col items-center justify-center"
         >
+          {/* Checkpoint indicators */}
+          <div className="flex gap-2 mb-2">
+            {Array.from(
+              {
+                length: Math.floor(stimuliSequence.length / GAP_CHECKPOINT) - 1,
+              },
+              (_, i) => {
+                const checkpointIndex = i + 1;
+                const isValidated = validatedCheckpoints.has(checkpointIndex);
+                return (
+                  <div
+                    key={checkpointIndex}
+                    className={`w-3 h-3 rounded-sm ${
+                      isValidated ? "bg-red-500" : "bg-orange-500"
+                    }`}
+                    title={`Checkpoint ${checkpointIndex} ${
+                      isValidated ? "(validated)" : ""
+                    }`}
+                  />
+                );
+              }
+            )}
+          </div>
+
           <Progress
-            value={(overallProgress / stimuliSequence.length) * 100}
+            value={(lettersShown / stimuliSequence.length) * 100}
             className="h-2 bg-gray-200"
             variant="gray"
           />
+          <div className="text-sm text-gray-500 mt-2">
+            Letters: {lettersShown} / {stimuliSequence.length}
+          </div>
         </div>
+      )}
+
+      {targetKey === "click" && (
+        <div
+          id="clickArea"
+          className="absolute bottom-10 left-1/2 -translate-x-1/2 w-10 h-10 border-2 border-gray-500 bg-slate-200 rounded-lg z-10 hover:bg-orange-400 hover:border-gray-700 transition-colors select-none"
+          onClick={handleClick}
+          style={{ cursor: "pointer", pointerEvents: "auto" }}
+        ></div>
       )}
     </div>
   );
