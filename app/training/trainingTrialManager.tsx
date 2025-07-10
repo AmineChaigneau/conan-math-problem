@@ -25,9 +25,11 @@ type TrainingTrialManagerProps = {
   trialIndex: number;
   attemptNumber: number;
   isUsingEasierSequence?: boolean;
+  currentCheckpointIndex?: number;
   onTrialComplete: (wasSuccessful: boolean) => void;
   onRestartSameSequence?: () => void;
   onSwitchToEasier?: () => void;
+  onCheckpointError?: (checkpointIndex: number) => void;
 };
 
 export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
@@ -36,9 +38,11 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     trialIndex,
     attemptNumber,
     isUsingEasierSequence = false,
+    currentCheckpointIndex = 0,
     onTrialComplete,
     onRestartSameSequence,
     onSwitchToEasier,
+    onCheckpointError,
   } = props;
   const [showFeedback, setShowFeedback] = useState<"success" | "error" | null>(
     null
@@ -61,13 +65,46 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     );
   }, [trainingLevel.matches, trainingLevel.N, attemptNumber]);
 
+  // Generate ghost letters if restarting from checkpoint
+  const ghostLetters = useMemo(() => {
+    if (currentCheckpointIndex > 0) {
+      const letters: string[] = [];
+      const actualN = trainingLevel.N;
+
+      // For N-back, we need the N previous letters: [checkpoint-N, ..., checkpoint-1]
+      for (let i = actualN; i >= 1; i--) {
+        const ghostIndex = currentCheckpointIndex - i;
+        if (ghostIndex >= 0) {
+          letters.push(sequence[ghostIndex]);
+        }
+      }
+
+      console.log(
+        `Training: Generated ghost letters for checkpoint ${currentCheckpointIndex} (N=${actualN}):`,
+        letters,
+        `(indices: ${letters
+          .map((_, i) => currentCheckpointIndex - actualN + i)
+          .filter((idx) => idx >= 0)})`
+      );
+
+      return letters;
+    }
+    return [];
+  }, [sequence, currentCheckpointIndex, trainingLevel.N]);
+
   // Handle immediate error detection (restart mode only)
   const handleError = (errorData: {
     stimulusIndex: number;
     errorType: "miss" | "falseAlarm";
     currentResponses: ResponseData[];
+    lastCheckpoint: number;
   }) => {
     if (GAMEMODE === "restart") {
+      // Notify parent about checkpoint error
+      if (onCheckpointError) {
+        onCheckpointError(errorData.lastCheckpoint);
+      }
+
       // Create a mock AttemptResults for the error display
       const mockAttemptResults: AttemptResults = {
         trialId: `training-trial-${trialIndex + 1}-attempt-${attemptNumber}`,
@@ -75,7 +112,7 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
         responses: errorData.currentResponses,
         startTime: Date.now() - 5000,
         endTime: Date.now(),
-        stimuliSequence: sequence,
+        matchesSequence: trainingLevel.matches,
         summary: {
           totalStimuli: errorData.currentResponses.length,
           totalMatches: 0,
@@ -180,10 +217,13 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
         <div className="text-center space-y-8">
           <div className="text-6xl font-bold text-red-600 mb-4">FAIL</div>
           <div className="text-2xl text-gray-700">
-            Sequence Failed - Restarting Same Sequence
+            Sequence Failed - Restarting from Checkpoint
           </div>
           <div className="text-lg text-gray-500">
             Already at easiest level ({trainingLevel.N}-back)
+          </div>
+          <div className="text-lg text-blue-600">
+            Checkpoint: Position {currentCheckpointIndex + 1}
           </div>
           <div className="text-sm text-gray-400 mt-8">
             Automatically restarting in 1.5 seconds...
@@ -200,9 +240,11 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
         <NbackDifficultyRestart
           trialId={trialIndex + 1}
           trialResults={{
-            stimuliSequence: lastResults.stimuliSequence,
+            matchesSequence: lastResults.matchesSequence,
             totalAttempts: 1,
             overallAccuracy: lastResults.summary.accuracy,
+            reward: 0,
+            currentReward: 0,
             attempts: [
               {
                 attemptIndex: lastResults.attemptIndex,
@@ -255,13 +297,13 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
     <div className="relative h-full w-full flex items-center justify-center bg-white">
       <div className="fixed top-0 left-1/2 -translate-x-1/2 h-[75px] w-3/4 flex flex-col items-center justify-center gap-2">
         <Progress
-          value={((trialIndex + 1) / LEVELS_NB_TRAINING) * 100}
+          value={(trialIndex / LEVELS_NB_TRAINING) * 100}
           className="shadow-2xl"
         />
         <div
           className={`text-sm text-zinc-400 ${firaCode.className} text-center`}
         >
-          {trialIndex + 1} / {LEVELS_NB_TRAINING} sequences completed
+          {trialIndex} / {LEVELS_NB_TRAINING} sequences completed
         </div>
       </div>
 
@@ -273,6 +315,8 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
         intertrialInterval={trainingLevel.intertrialInterval}
         sequenceLength={trainingLevel.sequenceLength}
         targetKey={"click"}
+        startFromIndex={currentCheckpointIndex}
+        ghostLetters={ghostLetters.length > 0 ? ghostLetters : undefined}
         predefinedSequence={sequence}
         onTrialEnd={handleAttemptEnd}
         onError={handleError}

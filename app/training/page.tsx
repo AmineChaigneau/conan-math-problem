@@ -34,6 +34,9 @@ export default function Training() {
   // State for easier sequence tracking
   const [isUsingEasierSequence, setIsUsingEasierSequence] = useState(false);
 
+  // State for checkpoint management
+  const [currentCheckpointIndex, setCurrentCheckpointIndex] = useState(0);
+
   // State for percent mode
   const [completedTrials, setCompletedTrials] = useState<boolean[]>([]);
   const [showFeedback, setShowFeedback] = useState<"success" | "error" | null>(
@@ -75,6 +78,7 @@ export default function Training() {
       ]);
       setCurrentAttempts(1);
       setIsUsingEasierSequence(false);
+      setCurrentCheckpointIndex(0); // Reset checkpoint for next trial
       setCurrentTrialIndex((prev) => prev + 1);
       return;
     }
@@ -93,15 +97,27 @@ export default function Training() {
 
   const handleRestartSameSequence = () => {
     setCurrentAttempts((prev) => prev + 1);
+    // Keep current checkpoint index for restart
+  };
+
+  const handleCheckpointError = (checkpointIndex: number) => {
+    setCurrentCheckpointIndex(checkpointIndex);
+    console.log(
+      `Training: Checkpoint error, setting restart index to: ${checkpointIndex}`
+    );
   };
 
   const handleSwitchToEasier = () => {
     const originalLevel = levelsData.trainingSequence[currentTrialIndex];
 
     if (originalLevel.N > 1) {
-      // Switch to easier (N-1) sequence
+      // Switch to easier (N-1) sequence but keep same trial and checkpoint
       setIsUsingEasierSequence(true);
       setCurrentAttempts((prev) => prev + 1);
+      // Keep current checkpoint index instead of resetting to 0
+      console.log(
+        `Training: Switching to easier (N-1) at same checkpoint: ${currentCheckpointIndex}`
+      );
     } else {
       // Already at easiest level (1-back), treat as trial completion failure
       handleTrialComplete(false);
@@ -297,9 +313,11 @@ export default function Training() {
           trialIndex={currentTrialIndex}
           attemptNumber={currentAttempts}
           isUsingEasierSequence={isUsingEasierSequence}
+          currentCheckpointIndex={currentCheckpointIndex}
           onTrialComplete={handleTrialComplete}
           onRestartSameSequence={handleRestartSameSequence}
           onSwitchToEasier={handleSwitchToEasier}
+          onCheckpointError={handleCheckpointError}
         />
       </div>
     </div>

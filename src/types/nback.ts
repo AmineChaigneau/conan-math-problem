@@ -26,7 +26,7 @@ export interface AttemptResults {
   responses: ResponseData[];
   startTime: number;
   endTime: number;
-  stimuliSequence: string[];
+  matchesSequence: number[];
   summary: TrialSummary;
 }
 
@@ -39,9 +39,11 @@ export interface SimplifiedDifficultyChoiceData {
 }
 
 export interface TrialResults {
-  stimuliSequence: string[];
+  matchesSequence: number[];
   totalAttempts: number;
   overallAccuracy: number;
+  reward: number;
+  currentReward: number;
   // Array of attempts, each attempt is an object with the following properties:
   attempts: Array<{
     attemptIndex: number;

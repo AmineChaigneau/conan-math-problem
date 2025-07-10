@@ -13,13 +13,15 @@ interface TrialDataToSave {
   trialCompletionTime: string;
   currentTrialNumber: number;
 
-  // Block and sequence information
-  currentBlockIndex: number;
-  attemptInCurrentBlock: number; // Number of attempt in block
+  // Trial information
   trialUniqueId: string | null; // From levels.json
 
   // Additional context
   wasRestarted: boolean;
+
+  // Reward information
+  reward: number;
+  currentReward: number;
 }
 
 interface SaveTrialDataParams {
@@ -30,6 +32,8 @@ interface SaveTrialDataParams {
   wasRestarted?: boolean;
   difficultyChoiceData?: NbackDifficultyChoiceData;
   trialUniqueId?: string | null;
+  reward: number;
+  currentReward: number;
 }
 
 export const saveTrialData = async (
@@ -60,13 +64,15 @@ export const saveTrialData = async (
       trialCompletionTime: timestamp,
       currentTrialNumber: trialNumber,
 
-      // Block and sequence information
-      currentBlockIndex: params.taskState.currentBlockIndex,
-      attemptInCurrentBlock: params.taskState.trialInCurrentBlock,
+      // Trial information
       trialUniqueId: params.trialUniqueId || null,
 
       // Additional context
       wasRestarted: params.wasRestarted || false,
+
+      // Reward information
+      reward: params.reward,
+      currentReward: params.currentReward,
     };
 
     // Save to Firebase Storage with detailed filename
@@ -84,6 +90,8 @@ export const saveTrialData = async (
       ).toFixed(1)}%`
     );
     console.log(`- Trial duration: ${trialDuration}ms`);
+    console.log(`- Reward earned: ${params.reward}`);
+    console.log(`- Current total reward: ${params.currentReward}`);
 
     // Log attempt details
     params.trialResults.attempts.forEach((attempt, index) => {
@@ -132,13 +140,8 @@ export const saveSessionSummary = async (
       participantId: user.uid,
       sessionCompletionTime: timestamp,
 
-      // Levels order information
-      blockSequence: taskState.blockSequence,
-      levelsOrder: taskState.blockSequence.map((block) => ({
-        blockNumber: block.blockNumber,
-        difficulty: block.difficulty,
-        levelIndex: block.levelIndex,
-      })),
+      // Sequence order information
+      sequenceOrder: taskState.sequenceOrder,
 
       totalTrials: allTrialResults.length,
       totalAttempts: totalAttempts,
@@ -178,6 +181,14 @@ export const saveSessionSummary = async (
         trialsWithMultipleAttempts: allTrialResults.filter(
           (trial) => trial.totalAttempts > 1
         ).length,
+        totalReward: allTrialResults.reduce(
+          (sum, trial) => sum + trial.reward,
+          0
+        ),
+        finalReward:
+          allTrialResults.length > 0
+            ? allTrialResults[allTrialResults.length - 1].currentReward
+            : 0,
       },
 
       // Full trial data with all attempts

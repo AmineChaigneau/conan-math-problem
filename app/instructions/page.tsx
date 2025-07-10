@@ -4,15 +4,28 @@ import { Button } from "@/components/ui/button";
 import { GAMEMODE } from "@/constants/block";
 import { Fira_Code } from "next/font/google";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const firaCode = Fira_Code({
   subsets: ["latin"],
   display: "swap",
 });
 
+// localStorage keys used in the task
+const LOCALSTORAGE_KEY = "nback-task-state";
+const CHECKPOINT_KEY = "nback-checkpoints";
+const REWARD_KEY = "nback-reward";
+
 export default function Instructions() {
   const [currentStep, setCurrentStep] = useState(1);
+
+  // Clear task-related localStorage when instructions page loads
+  useEffect(() => {
+    localStorage.removeItem(LOCALSTORAGE_KEY);
+    localStorage.removeItem(CHECKPOINT_KEY);
+    localStorage.removeItem(REWARD_KEY);
+    console.log("Task localStorage cleared on instructions page load");
+  }, []);
 
   const steps = [
     {

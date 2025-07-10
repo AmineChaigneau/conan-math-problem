@@ -16,6 +16,8 @@ const firaCode = Fira_Code({
 
 // Local constant to avoid linting issues
 const GAP_CHECKPOINT = GAP_BETWEEN_CHECKPOINT;
+const PREPARING_DURATION = 1500; // Duration for preparing phase in milliseconds
+const COMPLETED_DURATION = 1000; // Duration for completed phase in milliseconds
 
 interface NbackComponentProps {
   trialId: string | number;
@@ -111,7 +113,7 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
         setTrialPhase("interval");
         timeoutRef.current = setTimeout(() => {
           startNextStimulus(startFromIndex);
-        }, intertrialInterval);
+        }, 300); // Reduced from intertrialInterval to 300ms for smoother transition
         return;
       }
 
@@ -240,7 +242,7 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
         // Start directly with the main sequence
         startNextStimulus(startFromIndex);
       }
-    }, 1000);
+    }, PREPARING_DURATION);
 
     return () => {
       if (timeoutRef.current) {
@@ -267,7 +269,11 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
         // Trial completed
         setTrialPhase("completed");
         setIsTrialActive(false);
-        calculateAndSendResults();
+
+        // Wait for COMPLETED_DURATION before sending results
+        timeoutRef.current = setTimeout(() => {
+          calculateAndSendResults();
+        }, COMPLETED_DURATION);
         return;
       }
 
@@ -409,7 +415,6 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
 
   const calculateAndSendResults = useCallback(() => {
     const finalResponses = responsesRef.current;
-    const sequence = stimuliRef.current;
     const endTime = Date.now();
 
     let correctHits = 0;
@@ -473,7 +478,7 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
       responses: finalResponses,
       startTime: attemptStartTimeRef.current,
       endTime,
-      stimuliSequence: sequence,
+      matchesSequence: matches || [],
       summary,
     };
 
@@ -510,9 +515,15 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
   };
 
   const getPhaseDisplay = () => {
+    // Determine if we should use restart variant
+    const isRestart =
+      startFromIndex > 0 ||
+      (ghostLetters && ghostLetters.length > 0) ||
+      N === 1;
+
     switch (trialPhase) {
       case "preparing":
-        return <GetReady N={N} />;
+        return <GetReady N={N} variant={isRestart ? "restart" : "default"} />;
       case "ghost":
         if (
           currentGhostIndex >= 0 &&
@@ -526,7 +537,7 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
       case "interval":
         return "+";
       case "completed":
-        return "Trial completed!";
+        return <GetReady N={N} variant="completed" />;
       default:
         return "";
     }

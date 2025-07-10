@@ -45,7 +45,7 @@ export default function End() {
           <Button className={`${firaCode.className} text-lg bg-orange-500`}>
             <Link
               className="w-full h-full flex justify-center items-center"
-              href="#"
+              href="https://app.prolific.com/submissions/complete?cc=C28ILGGC"
             >
               CLICK HERE
             </Link>
@@ -56,7 +56,7 @@ export default function End() {
             {/* <p className={`${pressStart2P.className}`}>Your Prolific code:</p>
               <p className="select-text">{auth.currentUser?.uid}</p> */}
             <p className={`${firaCode.className}`}>Prolific code:</p>
-            <p className="select-text text-red-500 font-bold">C1EY8634</p>
+            <p className="select-text text-red-500 font-bold">C28ILGGC</p>
           </div>
           <div>
             <i>Copy the code to your clipboard to request your reward</i>
