@@ -8,7 +8,7 @@ import { ref, uploadString } from "firebase/storage";
 
 interface TrialDataToSave {
   // Basic trial information
-  trialResults: TrialResults; // This now contains all attempts with full data
+  trialResults: TrialResults; // This now contains all attempts with filtered response data
   trialStartTime: number;
   trialCompletionTime: string;
   currentTrialNumber: number;
@@ -86,7 +86,7 @@ export const saveTrialData = async (
     console.log(`- Total attempts: ${params.trialResults.totalAttempts}`);
     console.log(
       `- Overall accuracy: ${(
-        params.trialResults.overallAccuracy * 100
+        params.trialResults.summary.accuracy * 100
       ).toFixed(1)}%`
     );
     console.log(`- Trial duration: ${trialDuration}ms`);
@@ -111,7 +111,8 @@ export const saveTrialData = async (
 export const saveSessionSummary = async (
   taskState: TaskState,
   allTrialResults: TrialResults[],
-  allDifficultyChoices: NbackDifficultyChoiceData[]
+  allDifficultyChoices: NbackDifficultyChoiceData[],
+  finalReward: number
 ): Promise<void> => {
   try {
     const user = auth.currentUser;
@@ -156,7 +157,7 @@ export const saveSessionSummary = async (
           ) / allTrialResults.length,
         averageOverallAccuracy:
           allTrialResults.reduce(
-            (sum, trial) => sum + trial.overallAccuracy,
+            (sum, trial) => sum + trial.summary.accuracy,
             0
           ) / allTrialResults.length,
         totalCorrectHits: allTrialResults.reduce(
@@ -181,14 +182,8 @@ export const saveSessionSummary = async (
         trialsWithMultipleAttempts: allTrialResults.filter(
           (trial) => trial.totalAttempts > 1
         ).length,
-        totalReward: allTrialResults.reduce(
-          (sum, trial) => sum + trial.reward,
-          0
-        ),
-        finalReward:
-          allTrialResults.length > 0
-            ? allTrialResults[allTrialResults.length - 1].currentReward
-            : 0,
+        // Note: Individual trial rewards are now stored in trial files, not in TrialResults
+        finalReward: finalReward,
       },
 
       // Full trial data with all attempts

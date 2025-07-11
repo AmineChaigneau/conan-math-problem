@@ -99,14 +99,14 @@ export default function Instructions() {
         </div>
       ),
     },
-    {
-      title: "Ghost When to Restart",
-      content: (
-        <div className="flex flex-col gap-8 text-justify">
-          <img src="/images/ghost_when_restart.png" alt="When to Restart" />
-        </div>
-      ),
-    },
+    // {
+    //   title: "Ghost When to Restart",
+    //   content: (
+    //     <div className="flex flex-col gap-8 text-justify">
+    //       <img src="/images/ghost_when_restart.png" alt="When to Restart" />
+    //     </div>
+    //   ),
+    // },
     {
       title: "Error",
       content: (

@@ -296,7 +296,7 @@ export default function Training() {
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2">
           {/* Instructions for current trial */}
           <div className="mb-4 text-center max-w-md">
-            <p className="text-sm text-gray-600">
+            {/* <p className="text-sm text-gray-600">
               Click on the <strong>GRAY AREA</strong> when the current letter
               matches the one from <strong>{currentLevel.N}</strong> letters ago
               {isUsingEasierSequence && (
@@ -304,6 +304,9 @@ export default function Training() {
                   (Easier sequence - N-1 back)
                 </span>
               )}
+            </p> */}
+            <p className="text-sm text-gray-600">
+              Move the cursor over one of the target areas to select it.
             </p>
           </div>
         </div>

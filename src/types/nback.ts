@@ -28,6 +28,11 @@ export interface AttemptResults {
   endTime: number;
   matchesSequence: number[];
   summary: TrialSummary;
+  // New fields for checkpoint and error information
+  startCheckpoint: number; // Index where this attempt started
+  distanceToGoal: number; // Distance from start checkpoint to sequence end
+  errorType?: "miss" | "falseAlarm" | "none"; // Type of error that ended this attempt
+  errorIndex?: number; // Index where the error occurred (if any)
 }
 
 // Simplified difficulty choice data (for storage in attempts)
@@ -41,9 +46,8 @@ export interface SimplifiedDifficultyChoiceData {
 export interface TrialResults {
   matchesSequence: number[];
   totalAttempts: number;
-  overallAccuracy: number;
-  reward: number;
-  currentReward: number;
+  // Removed overallAccuracy to avoid duplication with summary.accuracy
+  // Removed reward and currentReward - these will be stored at the trial level only
   // Array of attempts, each attempt is an object with the following properties:
   attempts: Array<{
     attemptIndex: number;
@@ -52,6 +56,10 @@ export interface TrialResults {
     endTime: number;
     isEasierSequence: boolean;
     difficultyChoiceData?: SimplifiedDifficultyChoiceData;
+    startCheckpoint: number;
+    distanceToGoal: number;
+    errorType?: "miss" | "falseAlarm" | "none";
+    errorIndex?: number;
   }>;
   // summary of the trial (all attempts)
   summary: TrialSummary;

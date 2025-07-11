@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { auth, db } from "@/config/firebase";
 import { GAMEMODE, TOTAL_SEQUENCES } from "@/constants/block";
 import {
   AttemptResults,
@@ -18,6 +19,7 @@ import {
   getSequenceByIndex,
 } from "@/utils/generateSequenceOrder";
 import { saveSessionSummary, saveTrialData } from "@/utils/saveTrialData";
+import { doc, updateDoc } from "firebase/firestore";
 import { Fira_Code } from "next/font/google";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -64,6 +66,26 @@ export default function TaskPage() {
   const [currentReward, setCurrentReward] = useState(0);
 
   const router = useRouter();
+
+  // Function to update reward in Firestore
+  const updateRewardInFirestore = async (newReward: number) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error("No user found for reward update");
+        return;
+      }
+
+      const userDocRef = doc(db, "users", user.uid);
+      await updateDoc(userDocRef, {
+        reward: newReward,
+      });
+
+      console.log(`Reward updated in Firestore: ${newReward} points`);
+    } catch (error) {
+      console.error("Failed to update reward in Firestore:", error);
+    }
+  };
 
   // Initialize or load task state from localStorage
   useEffect(() => {
@@ -145,8 +167,7 @@ export default function TaskPage() {
   const compileTrialResults = (
     attempts: AttemptResults[],
     isEasierSequence: boolean,
-    difficultyChoiceData?: NbackDifficultyChoiceData,
-    trialReward: number = 0
+    difficultyChoiceData?: NbackDifficultyChoiceData
   ): TrialResults => {
     if (attempts.length === 0) {
       throw new Error("No attempts to compile");
@@ -212,9 +233,6 @@ export default function TaskPage() {
     return {
       matchesSequence: firstAttempt.matchesSequence,
       totalAttempts: attempts.length,
-      overallAccuracy,
-      reward: trialReward,
-      currentReward: currentReward + trialReward,
       attempts: attempts.map((attempt) => ({
         attemptIndex: attempt.attemptIndex,
         responses: attempt.responses,
@@ -222,6 +240,10 @@ export default function TaskPage() {
         endTime: attempt.endTime,
         isEasierSequence: isEasierSequence,
         difficultyChoiceData: simplifiedDifficultyChoiceData,
+        startCheckpoint: attempt.startCheckpoint,
+        distanceToGoal: attempt.distanceToGoal,
+        errorType: attempt.errorType,
+        errorIndex: attempt.errorIndex,
       })),
       summary: {
         totalStimuli: lastAttempt.summary.totalStimuli,
@@ -240,17 +262,6 @@ export default function TaskPage() {
 
   // Get current level configuration
   const getCurrentLevel = () => {
-    if (isEasierSequence) {
-      return {
-        level: 0,
-        N: 1,
-        stimulusTime: 1000,
-        intertrialInterval: 1200,
-        sequenceLength: 15,
-        description: "1-back (Easy)",
-      };
-    }
-
     if (!taskState) {
       return {
         level: 1,
@@ -268,6 +279,17 @@ export default function TaskPage() {
       taskState.sequenceOrder,
       currentSequenceIndex
     );
+
+    if (isEasierSequence) {
+      return {
+        level: 0,
+        N: 1,
+        stimulusTime: 1000,
+        intertrialInterval: 1200,
+        sequenceLength: currentSequence.sequenceLength,
+        description: "1-back (Easy)",
+      };
+    }
 
     return {
       level: currentSequence.level,
@@ -307,14 +329,16 @@ export default function TaskPage() {
     const trialResults = compileTrialResults(
       newAttempts,
       isEasierSequence,
-      lastDifficultyChoiceData || undefined,
-      trialReward
+      lastDifficultyChoiceData || undefined
     );
     setLastTrialResults(trialResults);
     setAllTrialResults((prev) => [...prev, trialResults]);
 
     // Update current reward state
     setCurrentReward(newCurrentReward);
+
+    // Update reward in Firestore
+    await updateRewardInFirestore(newCurrentReward);
 
     // Save trial data to Firebase Storage
     await saveTrialData({
@@ -355,7 +379,8 @@ export default function TaskPage() {
         await saveSessionSummary(
           taskState,
           [...allTrialResults, trialResults],
-          allDifficultyChoices
+          allDifficultyChoices,
+          newCurrentReward
         );
         console.log("Session summary saved successfully");
       } catch (error) {
@@ -410,11 +435,7 @@ export default function TaskPage() {
         taskState.sequenceOrder,
         taskState.currentTrialNumber - 1
       );
-      const currentMatchesArray = isEasierSequence
-        ? new Array(currentLevel.sequenceLength)
-            .fill(0)
-            .map((_, i) => (i >= 1 && Math.random() < 0.3 ? 1 : 0))
-        : currentSequence.matches || [];
+      const currentMatchesArray = currentSequence.matches || [];
 
       // Create a partial attempt result for the failed attempt
       const partialAttempt: AttemptResults = {
@@ -422,10 +443,14 @@ export default function TaskPage() {
           taskState?.currentTrialNumber || 0
         }-attempt-${currentAttemptNumber}`,
         attemptIndex: currentAttemptNumber,
-        responses: errorData.currentResponses,
+        responses: errorData.currentResponses, // Already filtered in nbackcomponent.tsx
         startTime: trialStartTime,
         endTime: Date.now(),
         matchesSequence: currentMatchesArray,
+        startCheckpoint: currentCheckpointIndex,
+        distanceToGoal: currentLevel.sequenceLength - currentCheckpointIndex,
+        errorType: errorData.errorType,
+        errorIndex: errorData.stimulusIndex,
         summary: {
           totalStimuli: errorData.currentResponses.length,
           totalMatches: 0,
@@ -538,11 +563,7 @@ export default function TaskPage() {
         currentAttemptNumber;
 
       // Always use the same matches array from the original sequence
-      const matchesArray = isEasierSequence
-        ? new Array(currentLevel.sequenceLength)
-            .fill(0)
-            .map((_, i) => (i >= 1 && Math.random() < 0.3 ? 1 : 0))
-        : currentSequence.matches || [];
+      const matchesArray = currentSequence.matches || [];
 
       mainSequence = generateSequenceFromMatches(
         matchesArray,
@@ -622,14 +643,10 @@ export default function TaskPage() {
           }
           matches={
             // Always pass the matches array from current sequence
-            isEasierSequence
-              ? new Array(currentLevel.sequenceLength)
-                  .fill(0)
-                  .map((_, i) => (i >= 1 && Math.random() < 0.3 ? 1 : 0))
-              : getSequenceByIndex(
-                  taskState.sequenceOrder,
-                  taskState.currentTrialNumber - 1
-                ).matches || []
+            getSequenceByIndex(
+              taskState.sequenceOrder,
+              taskState.currentTrialNumber - 1
+            ).matches || []
           }
           currentTrialIndex={taskState.currentTrialNumber}
           onTrialEnd={handleAttemptEnd}
@@ -659,7 +676,7 @@ export default function TaskPage() {
   if (taskPhase === "auto_restart") {
     return (
       <div
-        className={`flex flex-col items-center justify-center h-screen ${firaCode.className}`}
+        className={`flex flex-col items-center justify-center h-screen ${firaCode.className} bg-white`}
       >
         <div className="text-center space-y-8">
           <div className="text-6xl font-bold text-red-600 mb-4">FAIL</div>

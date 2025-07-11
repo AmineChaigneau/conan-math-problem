@@ -109,10 +109,15 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
       const mockAttemptResults: AttemptResults = {
         trialId: `training-trial-${trialIndex + 1}-attempt-${attemptNumber}`,
         attemptIndex: attemptNumber,
-        responses: errorData.currentResponses,
+        responses: errorData.currentResponses, // Already filtered in nbackcomponent.tsx
         startTime: Date.now() - 5000,
         endTime: Date.now(),
         matchesSequence: trainingLevel.matches,
+        startCheckpoint: currentCheckpointIndex || 0,
+        distanceToGoal:
+          trainingLevel.sequenceLength - (currentCheckpointIndex || 0),
+        errorType: errorData.errorType,
+        errorIndex: errorData.stimulusIndex,
         summary: {
           totalStimuli: errorData.currentResponses.length,
           totalMatches: 0,
@@ -242,9 +247,6 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
           trialResults={{
             matchesSequence: lastResults.matchesSequence,
             totalAttempts: 1,
-            overallAccuracy: lastResults.summary.accuracy,
-            reward: 0,
-            currentReward: 0,
             attempts: [
               {
                 attemptIndex: lastResults.attemptIndex,
@@ -252,6 +254,10 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
                 startTime: lastResults.startTime,
                 endTime: lastResults.endTime,
                 isEasierSequence: isUsingEasierSequence,
+                startCheckpoint: lastResults.startCheckpoint,
+                distanceToGoal: lastResults.distanceToGoal,
+                errorType: lastResults.errorType,
+                errorIndex: lastResults.errorIndex,
               },
             ],
             summary: lastResults.summary,
@@ -305,6 +311,15 @@ export const TrainingTrialManager = (props: TrainingTrialManagerProps) => {
         >
           {trialIndex} / {LEVELS_NB_TRAINING} sequences completed
         </div>
+      </div>
+
+      <div
+        className={`fixed bottom-5 left-5 font-bold text-zinc-600 ${firaCode.className}`}
+        style={{
+          opacity: showRestartError ? 0 : 1,
+        }}
+      >
+        <p className="text-md text-extrabold text-zinc-400">Training Level</p>
       </div>
 
       <NbackComponent

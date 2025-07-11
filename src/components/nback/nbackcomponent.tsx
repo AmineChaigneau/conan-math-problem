@@ -95,10 +95,10 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
 
     setCurrentGhostIndex(0);
     setTrialPhase("ghost");
-    console.log(
-      "Starting ghost sequence with letters:",
-      ghostLettersRef.current
-    );
+    // console.log(
+    //   "Starting ghost sequence with letters:",
+    //   ghostLettersRef.current
+    // );
 
     // Show first ghost letter
     showGhostLetter(0);
@@ -155,7 +155,7 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
       const actualN = N === 1 ? N_EASIER : N; // Use N_EASIER for easier sequences
       const seed = Date.now() + attemptIndex;
       sequence = generateSequenceFromMatches(matches, actualN, seed);
-      console.log("Sequence:", sequence);
+      // console.log("Sequence:", sequence);
       actualMatches = matches;
     } else {
       // Fallback: generate a basic sequence (shouldn't happen in normal usage)
@@ -165,14 +165,14 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     }
 
     // Log the generated sequence and matches
-    console.log(
-      `Trial ${currentTrialIndex || "unknown"} - Generated sequence:`,
-      sequence
-    );
-    console.log(
-      `Trial ${currentTrialIndex || "unknown"} - Matches:`,
-      actualMatches
-    );
+    // console.log(
+    //   `Trial ${currentTrialIndex || "unknown"} - Generated sequence:`,
+    //   sequence
+    // );
+    // console.log(
+    //   `Trial ${currentTrialIndex || "unknown"} - Matches:`,
+    //   actualMatches
+    // );
     console.log(
       `Trial ${currentTrialIndex || "unknown"} - N-back level:`,
       N === 1 ? N_EASIER : N
@@ -311,10 +311,15 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
             ) {
               setFeedbackColor("#ef4444");
               const lastCheckpoint = getLastCheckpoint(stimulusIndex);
+              // Filter responses to only include those from current attempt (startFromIndex to stimulusIndex)
+              const currentAttemptResponses = responsesRef.current.slice(
+                startFromIndex,
+                stimulusIndex + 1
+              );
               onError({
                 stimulusIndex,
                 errorType: "miss",
-                currentResponses: [...responsesRef.current],
+                currentResponses: currentAttemptResponses,
                 lastCheckpoint,
               });
               return;
@@ -326,10 +331,15 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
             ) {
               setFeedbackColor("#ef4444");
               const lastCheckpoint = getLastCheckpoint(stimulusIndex);
+              // Filter responses to only include those from current attempt (startFromIndex to stimulusIndex)
+              const currentAttemptResponses = responsesRef.current.slice(
+                startFromIndex,
+                stimulusIndex + 1
+              );
               onError({
                 stimulusIndex,
                 errorType: "falseAlarm",
-                currentResponses: [...responsesRef.current],
+                currentResponses: currentAttemptResponses,
                 lastCheckpoint,
               });
               return;
@@ -414,8 +424,11 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
   }, [isTrialActive, currentStimulusIndex, stimulusStartTime, targetKey]);
 
   const calculateAndSendResults = useCallback(() => {
-    const finalResponses = responsesRef.current;
+    const allResponses = responsesRef.current;
     const endTime = Date.now();
+
+    // Filter responses to only include those from the current attempt (startFromIndex to end)
+    const currentAttemptResponses = allResponses.slice(startFromIndex);
 
     let correctHits = 0;
     let falseAlarms = 0;
@@ -424,7 +437,7 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     let totalMatches = 0;
     const totalReactionTimes: number[] = [];
 
-    finalResponses.forEach((response) => {
+    currentAttemptResponses.forEach((response) => {
       if (response.isMatchExpected) {
         totalMatches++;
         if (response.userResponded) {
@@ -447,7 +460,8 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
       }
     });
 
-    const accuracy = (correctHits + correctRejections) / finalResponses.length;
+    const accuracy =
+      (correctHits + correctRejections) / currentAttemptResponses.length;
     const meanReactionTime =
       totalReactionTimes.length > 0
         ? totalReactionTimes.reduce((a, b) => a + b, 0) /
@@ -455,12 +469,12 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
         : null;
     const hitRate = totalMatches > 0 ? correctHits / totalMatches : 0;
     const falseAlarmRate =
-      finalResponses.length - totalMatches > 0
-        ? falseAlarms / (finalResponses.length - totalMatches)
+      currentAttemptResponses.length - totalMatches > 0
+        ? falseAlarms / (currentAttemptResponses.length - totalMatches)
         : 0;
 
     const summary: TrialSummary = {
-      totalStimuli: finalResponses.length,
+      totalStimuli: currentAttemptResponses.length,
       totalMatches,
       correctHits,
       falseAlarms,
@@ -475,15 +489,26 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
     const results: AttemptResults = {
       trialId,
       attemptIndex,
-      responses: finalResponses,
+      responses: currentAttemptResponses, // Only include responses from current attempt
       startTime: attemptStartTimeRef.current,
       endTime,
       matchesSequence: matches || [],
+      startCheckpoint: startFromIndex,
+      distanceToGoal: sequenceLength - startFromIndex,
+      errorType: "none",
+      errorIndex: undefined, // No error for successful completion
       summary,
     };
 
     onTrialEnd(results);
-  }, [trialId, attemptIndex, onTrialEnd]);
+  }, [
+    trialId,
+    attemptIndex,
+    onTrialEnd,
+    startFromIndex,
+    sequenceLength,
+    matches,
+  ]);
 
   // Keyboard event listener
   useEffect(() => {
@@ -600,12 +625,17 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
                 return (
                   <div
                     key={checkpointIndex}
-                    className={`w-3 h-3 rounded-sm ${
-                      isValidated ? "bg-red-500" : "bg-orange-500"
+                    className={`w-4 h-4 rounded-xs ${
+                      isValidated ? "bg-orange-500" : "bg-gray-100"
+                    } border-2 ${
+                      isValidated ? "border-orange-700" : "border-gray-400"
                     }`}
                     title={`Checkpoint ${checkpointIndex} ${
                       isValidated ? "(validated)" : ""
                     }`}
+                    style={{
+                      display: trialPhase === "completed" ? "none" : "block",
+                    }}
                   />
                 );
               }
@@ -616,8 +646,16 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
             value={(lettersShown / stimuliSequence.length) * 100}
             className="h-2 bg-gray-200"
             variant="gray"
+            style={{
+              display: trialPhase === "completed" ? "none" : "block",
+            }}
           />
-          <div className="text-sm text-gray-500 mt-2">
+          <div
+            className="text-sm text-gray-500 mt-2"
+            style={{
+              display: trialPhase === "completed" ? "none" : "block",
+            }}
+          >
             Letters: {lettersShown} / {stimuliSequence.length}
           </div>
         </div>
@@ -628,7 +666,14 @@ export const NbackComponent: React.FC<NbackComponentProps> = ({
           id="clickArea"
           className="absolute bottom-10 left-1/2 -translate-x-1/2 w-10 h-10 border-2 border-gray-500 bg-slate-200 rounded-lg z-10 hover:bg-orange-400 hover:border-gray-700 transition-colors select-none"
           onClick={handleClick}
-          style={{ cursor: "pointer", pointerEvents: "auto" }}
+          style={{
+            cursor: "pointer",
+            pointerEvents: "auto",
+            display:
+              trialPhase === "completed" || trialPhase === "preparing"
+                ? "none"
+                : "block",
+          }}
         ></div>
       )}
     </div>

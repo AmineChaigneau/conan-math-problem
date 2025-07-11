@@ -1,6 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { auth, db } from "@/config/firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { Fira_Code } from "next/font/google";
 import Link from "next/link";
 import { useEffect } from "react";
@@ -13,8 +15,88 @@ const firaCode = Fira_Code({
 const LOCALSTORAGE_KEY = "nback-task-state";
 
 export default function End() {
-  // Clear the task state from localStorage when the component mounts
+  // Function to calculate payoff based on reward
+  const calculatePayoff = (reward: number): number => {
+    // Minimum payment: 6 euros, Maximum payment: 10 euros
+    // Minimum reward: 20 points, Maximum reward: 100 points
+    const minPayment = 6;
+    const maxPayment = 10;
+    const minReward = 20;
+    const maxReward = 100;
+
+    // Clamp reward between min and max
+    const clampedReward = Math.max(minReward, Math.min(maxReward, reward));
+
+    // Linear interpolation
+    const payoff =
+      minPayment +
+      ((clampedReward - minReward) * (maxPayment - minPayment)) /
+        (maxReward - minReward);
+
+    // Round to 2 decimal places
+    return Math.round(payoff * 100) / 100;
+  };
+
+  // Function to update payoff in Firestore
+  const updatePayoffInFirestore = async (
+    reward: number,
+    calculatedPayoff: number
+  ) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error("No user found for payoff update");
+        return;
+      }
+
+      const userDocRef = doc(db, "users", user.uid);
+      await updateDoc(userDocRef, {
+        payoff: calculatedPayoff,
+        finalReward: reward,
+      });
+
+      console.log(
+        `Payoff updated in Firestore: ${calculatedPayoff} euros for ${reward} points`
+      );
+    } catch (error) {
+      console.error("Failed to update payoff in Firestore:", error);
+    }
+  };
+
+  // Calculate and store payoff in Firestore
   useEffect(() => {
+    const calculateAndStorePayoff = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) {
+          console.error("No user found");
+          return;
+        }
+
+        // Get user's reward from Firestore
+        const userDocRef = doc(db, "users", user.uid);
+        const userDoc = await getDoc(userDocRef);
+
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const reward = userData.reward || 0;
+
+          // Calculate payoff
+          const calculatedPayoff = calculatePayoff(reward);
+
+          // Update payoff in Firestore
+          await updatePayoffInFirestore(reward, calculatedPayoff);
+        } else {
+          console.error("User document not found");
+        }
+      } catch (error) {
+        console.error("Error calculating and storing payoff:", error);
+      }
+    };
+
+    calculateAndStorePayoff();
+
+    // Clear the task state from localStorage
     localStorage.removeItem(LOCALSTORAGE_KEY);
     console.log("Cleared nback-task-state from localStorage");
   }, []);
